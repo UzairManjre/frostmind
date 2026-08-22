@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+models/*.pkl
+phone-bridge/.certs/
+backend/frostmind.db
+backend/frostmind.db.bak-*
+backend/__pycache__/
+backend/tests/__pycache__/
+web/node_modules/
+web/.next/
+web/.env.local

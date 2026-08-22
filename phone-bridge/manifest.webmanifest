@@ -1,0 +1,12 @@
+{
+  "name": "FROSTMIND Phone Bridge",
+  "short_name": "FROSTMIND",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f3d5c",
+  "theme_color": "#0f3d5c",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

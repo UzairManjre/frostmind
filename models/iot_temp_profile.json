@@ -1,0 +1,42 @@
+{
+  "rows": 97606,
+  "date_range": [
+    "2018-07-28 07:06:00",
+    "2018-12-08 09:30:00"
+  ],
+  "temp_stats_by_location": {
+    "count": {
+      "In": 20345.0,
+      "Out": 77261.0
+    },
+    "mean": {
+      "In": 30.4539198820349,
+      "Out": 36.265243784056636
+    },
+    "std": {
+      "In": 2.2381009902456857,
+      "Out": 5.717055063689673
+    },
+    "min": {
+      "In": 21.0,
+      "Out": 24.0
+    },
+    "25%": {
+      "In": 29.0,
+      "Out": 31.0
+    },
+    "50%": {
+      "In": 31.0,
+      "Out": 37.0
+    },
+    "75%": {
+      "In": 32.0,
+      "Out": 40.0
+    },
+    "max": {
+      "In": 41.0,
+      "Out": 51.0
+    }
+  },
+  "note": "No anomaly labels present in this dataset -- profiling only, not a trained/evaluated checkpoint."
+}

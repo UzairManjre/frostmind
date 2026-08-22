@@ -1,0 +1,13 @@
+{
+  "calibrated_threshold": -0.08333263294001902,
+  "roc_auc": 0.7703001108002382,
+  "average_precision": 0.3022398909133596,
+  "accuracy": 0.8556149732620321,
+  "balanced_accuracy": 0.7156789564540994,
+  "precision": 0.3880025526483727,
+  "recall": 0.5361552028218695,
+  "f1": 0.45020362828582006,
+  "n_calib": 10284,
+  "n_test": 10285,
+  "n_anomaly_test": 1134
+}

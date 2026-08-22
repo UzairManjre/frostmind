@@ -1,0 +1,21 @@
+{
+  "accuracy": 0.8233333333333334,
+  "balanced_accuracy": 0.8428423236514523,
+  "roc_auc": 0.9130817480132216,
+  "precision": 0.5308483290488432,
+  "recall": 0.875,
+  "f1": 0.6608,
+  "n_train": 5600,
+  "n_test": 2400,
+  "n_anomaly_test": 472,
+  "top_features": {
+    "temp_max_c": 0.1626,
+    "transit_days": 0.1521,
+    "door_opens": 0.1316,
+    "rh_std": 0.1295,
+    "temp_std_c": 0.0852,
+    "temp_mean_c": 0.055,
+    "rh_mean": 0.0447,
+    "temp_recovery_rate": 0.042
+  }
+}

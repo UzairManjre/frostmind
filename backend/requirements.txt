@@ -1,0 +1,19 @@
+fastapi>=0.141
+uvicorn[standard]>=0.52
+sqlalchemy>=2.0
+pydantic>=2.13
+pydantic-settings>=2.15
+pyjwt>=2.13
+python-multipart>=0.0.32
+numpy>=2.0
+httpx>=0.28
+pytest>=8.0
+
+# Only actually imported at runtime if models/model1_isolation_forest_frostmind.pkl exists on
+# disk (app/ml.py's import-time check) -- not required for the app to boot/serve/test today,
+# since that file doesn't exist yet (see app/ml.py and README.md's "Model 1 status"). Install
+# these before dropping a real .pkl in place, or scripts/train_model1_frostmind.py won't run
+# either:
+#   joblib>=1.5
+#   pandas>=2.0
+#   scikit-learn>=1.9
