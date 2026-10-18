@@ -3,7 +3,7 @@
 // pulled from a module-level singleton so this stays usable from both client components and
 // (if ever needed) server code without relying on browser globals at import time.
 
-import type { Alert, AlertType, CategoryInfo, ComplianceReport, FleetAnalytics, FleetShipment, SensorReading, Shipment } from "./types";
+import type { Alert, AlertType, CategoryInfo, ComplianceReport, FleetAnalytics, FleetShipment, PlanRequest, PlanResponse, Product, SensorReading, Shipment, Truck } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 
@@ -147,4 +147,18 @@ export async function fetchFleetAnalytics(token: string, days = 30): Promise<Fle
 // "couldn't generate right now, try again" state, never fabricates text.
 export async function generateComplianceReport(token: string, shipmentId: string): Promise<ComplianceReport> {
   return request(`/shipments/${shipmentId}/compliance_report`, token, { method: "POST" });
+}
+
+// Load Planner (Model 4 + Model 5). /products is public reference data like /categories;
+// /planner/plan is admin-JWT protected like the other admin endpoints.
+export async function fetchProducts(token: string | null = null): Promise<Product[]> {
+  return request("/products", token);
+}
+
+export async function fetchTrucks(token: string): Promise<Truck[]> {
+  return request("/trucks", token);
+}
+
+export async function planLoad(token: string, body: PlanRequest): Promise<PlanResponse> {
+  return request("/planner/plan", token, { method: "POST", body: JSON.stringify(body) });
 }

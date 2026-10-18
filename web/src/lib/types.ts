@@ -141,3 +141,68 @@ export interface Device {
   pairing_state: PairingState;
   paired_protocol: string | null;
 }
+
+// ---------- Load Planner (Model 4 mixed-load setpoint + Model 5 co-shipment compatibility) ----------
+// Mirrors backend/app/schemas.py ProductOut / PlanRequest / PlanResponse.
+
+export interface Product {
+  product_id: string;
+  name: string;
+  category: string;
+  safety_class: "produce" | "ready_to_eat" | "raw_animal" | "frozen" | "pharma";
+  frostmind_category: ProductCategory;
+  t_min_c: number | null;
+  t_max_c: number | null;
+  t_opt_c: number | null;
+  rh_min: number | null;
+  rh_max: number | null;
+  chilling_sensitive: boolean;
+  ethylene_production: number;
+  ethylene_sensitivity: number;
+  compat_groups: string;
+  source: string;
+}
+
+export interface PlanRequest {
+  products: { product_id: string; quantity_kg: number }[];
+  truck_id?: string | null;
+  sigma_c?: number | null;
+}
+
+export interface PlanPair {
+  a: string;
+  b: string;
+  probability: number | null;
+  compatible: boolean;
+  extrapolated: boolean;
+  vetoes: string[];
+  reasons: string[];
+  warnings: string[];
+}
+
+export interface PlanGroup {
+  group_id: number;
+  products: { product_id: string; name: string; quantity_kg: number; expected_loss_pct_per_day: number }[];
+  feasible: boolean;
+  recommended_setpoint_c: number | null;
+  method: "ml" | "physics" | "physics_fallback" | "infeasible";
+  physics_setpoint_c: number;
+  student_setpoint_c: number | null;
+  safe_range_c: (number | null)[];
+  band_c: number[];
+  expected_loss_pct_per_day: number;
+  device_category: ProductCategory;
+  device_category_setpoint_c: number;
+  device_category_within_1c: boolean;
+}
+
+export interface PlanResponse {
+  sigma_c: number;
+  sigma_source: string;
+  model4_active: boolean;
+  model5_active: boolean;
+  compatibility_threshold: number | null;
+  groups: PlanGroup[];
+  pairs: PlanPair[];
+  warnings: string[];
+}

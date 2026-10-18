@@ -39,7 +39,7 @@ Fixed by the firmware — these are the actual constants in `firmware/frostmind_
 ## 3. Wiring, in words
 
 - **DHT11/DHT22:** VCC->3V3, GND->GND, DATA->GPIO8. Only 3 wires — there's no SDA/SCL to mix up.
-- **Reed switch:** one leg->GPIO4, other leg->GND. No external resistor — the firmware enables the internal pull-up (`INPUT_PULLUP`), and LOW means the door is open.
+- **Reed switch:** one leg->GPIO4, other leg->GND. No external resistor — the firmware enables the internal pull-up (`INPUT_PULLUP`), and **HIGH means the door is open** (magnet away → switch open → pin pulled up). This was corrected after real-hardware testing; see `loop()` in the `.ino`.
 - **IR LED:** GPIO6 -> resistor (100-220 ohm) -> LED anode (longer leg) -> cathode -> GND. Aim broadly at the AC's front panel; a meter or two away is fine for direct-drive.
 - **GPIO5:** leave unconnected.
 - **Power:** USB-C from whichever machine you're flashing from.

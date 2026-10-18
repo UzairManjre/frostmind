@@ -1,0 +1,619 @@
+{
+  "steps": [
+    {
+      "step": "S2 extract",
+      "detail": "UMaine/HB66 storage table + 'lowest safe temperature' (chilling) table",
+      "storage_rows": 85,
+      "chill_rows": 18
+    },
+    {
+      "step": "S1 extract",
+      "detail": "Engineering ToolBox table rows with the full 11 columns",
+      "rows_in": 127,
+      "rows_out": 125
+    },
+    {
+      "step": "S1 synonyms",
+      "detail": "fixed typos / alternate names (e.g. 'Beans. Lima', 'Green Peas' -> 'Peas, green')",
+      "rows_changed": 4
+    },
+    {
+      "step": "S1 typo",
+      "detail": "'Ne' -> 'No' in Top-Ice column",
+      "rows_changed": 1
+    },
+    {
+      "step": "S1 parse + F->C",
+      "detail": "parsed F ranges ('30 - 40'), RH ranges, ethylene words -> ordinals, storage life text -> days (geometric mid)",
+      "rows": 125,
+      "missing_freeze_point": 62,
+      "missing_ethylene": 33,
+      "missing_shelf_life": 50
+    },
+    {
+      "step": "S1 dedupe",
+      "detail": "merged duplicate product rows (row agreeing with USDA HB66 wins, else most-complete; gaps filled from the other)",
+      "rows_in": 125,
+      "rows_out": 119,
+      "conflicts": 15
+    },
+    {
+      "step": "S1 x S2 merge",
+      "detail": "cross-checked against USDA HB66 (UMaine) and filled S1 gaps from it",
+      "matched": 82,
+      "values_filled": 14
+    },
+    {
+      "step": "S2-only rows",
+      "detail": "added S2-only commodities not present in S1",
+      "added": 1,
+      "skipped": 4
+    },
+    {
+      "step": "chilling sensitivity",
+      "detail": "threshold from HB66 lowest-safe-temperature table (preferred) or S1 chill point; sensitive if threshold >= 2 C or t_min >= 7 C",
+      "from_hb66": 18,
+      "chilling_sensitive": 38
+    },
+    {
+      "step": "sibling impute ethylene_production",
+      "detail": "filled from same-commodity rows (e.g. 'Carrots, mature' <- 'Carrots, bunched')",
+      "filled": 14
+    },
+    {
+      "step": "sibling impute ethylene_sensitivity",
+      "detail": "filled from same-commodity rows (e.g. 'Carrots, mature' <- 'Carrots, bunched')",
+      "filled": 14
+    },
+    {
+      "step": "sibling impute freeze_point_c",
+      "detail": "filled from same-commodity rows (e.g. 'Carrots, mature' <- 'Carrots, bunched')",
+      "filled": 10
+    },
+    {
+      "step": "sibling impute shelf_life_days",
+      "detail": "filled from same-commodity rows (e.g. 'Carrots, mature' <- 'Carrots, bunched')",
+      "filled": 4
+    },
+    {
+      "step": "sibling impute rh_min",
+      "detail": "filled from same-commodity rows (e.g. 'Carrots, mature' <- 'Carrots, bunched')",
+      "filled": 0
+    },
+    {
+      "step": "sibling impute rh_max",
+      "detail": "filled from same-commodity rows (e.g. 'Carrots, mature' <- 'Carrots, bunched')",
+      "filled": 0
+    },
+    {
+      "step": "category impute ethylene_production",
+      "detail": "remaining gaps filled with the fruit/vegetable median (mode for ethylene classes); flagged in imputed_fields",
+      "filled": 15
+    },
+    {
+      "step": "category impute ethylene_sensitivity",
+      "detail": "remaining gaps filled with the fruit/vegetable median (mode for ethylene classes); flagged in imputed_fields",
+      "filled": 15
+    },
+    {
+      "step": "category impute freeze_point_c",
+      "detail": "remaining gaps filled with the fruit/vegetable median (mode for ethylene classes); flagged in imputed_fields",
+      "filled": 39
+    },
+    {
+      "step": "category impute shelf_life_days",
+      "detail": "remaining gaps filled with the fruit/vegetable median (mode for ethylene classes); flagged in imputed_fields",
+      "filled": 33
+    },
+    {
+      "step": "category impute rh_min",
+      "detail": "remaining gaps filled with the fruit/vegetable median (mode for ethylene classes); flagged in imputed_fields",
+      "filled": 0
+    },
+    {
+      "step": "category impute rh_max",
+      "detail": "remaining gaps filled with the fruit/vegetable median (mode for ethylene classes); flagged in imputed_fields",
+      "filled": 0
+    },
+    {
+      "step": "McGregor labels",
+      "detail": "attached compatibility group sets (labels only, never features)",
+      "labelled": 107,
+      "multi_group": 26,
+      "mcgregor_members_unmatched": 56
+    },
+    {
+      "step": "non-produce rows",
+      "detail": "cited FDA/CDC/USP temperature bands + VT 348-960 shelf life (text -> days)",
+      "rows": 35,
+      "shelf_life_from_vt": 29
+    },
+    {
+      "step": "validation",
+      "detail": "range/ordering/uniqueness checks on the final table",
+      "rows": 155,
+      "problems": 0
+    }
+  ],
+  "dedupe_conflicts": [
+    {
+      "product": "Beans, green or snap",
+      "field": "rh_min",
+      "kept": 90.0,
+      "dropped": 95.0
+    },
+    {
+      "product": "Cauliflower",
+      "field": "t_max_c",
+      "kept": 0.0,
+      "dropped": 1.6666666666666667
+    },
+    {
+      "product": "Cauliflower",
+      "field": "rh_min",
+      "kept": 95.0,
+      "dropped": 90.0
+    },
+    {
+      "product": "Cauliflower",
+      "field": "rh_max",
+      "kept": 98.0,
+      "dropped": 95.0
+    },
+    {
+      "product": "Escarole",
+      "field": "t_max_c",
+      "kept": 0.0,
+      "dropped": 1.6666666666666667
+    },
+    {
+      "product": "Escarole",
+      "field": "rh_min",
+      "kept": 95.0,
+      "dropped": 90.0
+    },
+    {
+      "product": "Escarole",
+      "field": "rh_max",
+      "kept": 100.0,
+      "dropped": 95.0
+    },
+    {
+      "product": "Peas, green",
+      "field": "t_max_c",
+      "kept": 0.0,
+      "dropped": 1.6666666666666667
+    },
+    {
+      "product": "Peas, green",
+      "field": "rh_min",
+      "kept": 95.0,
+      "dropped": 90.0
+    },
+    {
+      "product": "Peas, green",
+      "field": "rh_max",
+      "kept": 98.0,
+      "dropped": 95.0
+    },
+    {
+      "product": "Quinces",
+      "field": "t_min_c",
+      "kept": -0.5555555555555556,
+      "dropped": 0.0
+    },
+    {
+      "product": "Quinces",
+      "field": "t_max_c",
+      "kept": 0.0,
+      "dropped": 1.6666666666666667
+    },
+    {
+      "product": "Quinces",
+      "field": "rh_max",
+      "kept": 90.0,
+      "dropped": 95.0
+    },
+    {
+      "product": "Tangerines",
+      "field": "t_min_c",
+      "kept": 4.444444444444445,
+      "dropped": 0.0
+    },
+    {
+      "product": "Tangerines",
+      "field": "t_max_c",
+      "kept": 7.222222222222222,
+      "dropped": 1.6666666666666667
+    }
+  ],
+  "s1_vs_s2_agreement": {
+    "matched_products": 82,
+    "temp_mid_mae_c": 0.264,
+    "temp_mid_exact_match_pct": 90.2,
+    "freeze_mae_c": 0.0,
+    "largest_temp_disagreements": [
+      {
+        "product": "Potatoes",
+        "tmid_s1": 8.61,
+        "tmid_s2": 3.89,
+        "diff": 4.72
+      },
+      {
+        "product": "Melons, Honey Dew",
+        "tmid_s1": 11.39,
+        "tmid_s2": 7.22,
+        "diff": 4.17
+      },
+      {
+        "product": "Melons, Crenshaw",
+        "tmid_s1": 11.39,
+        "tmid_s2": 7.22,
+        "diff": 4.17
+      },
+      {
+        "product": "Watermelon",
+        "tmid_s1": 16.94,
+        "tmid_s2": 12.78,
+        "diff": 4.17
+      },
+      {
+        "product": "Cantaloupe",
+        "tmid_s1": 2.78,
+        "tmid_s2": 1.11,
+        "diff": 1.67
+      },
+      {
+        "product": "Melons, Casaba/Persian",
+        "tmid_s1": 11.39,
+        "tmid_s2": 10.0,
+        "diff": 1.39
+      }
+    ]
+  },
+  "s2_only_not_added": [
+    "Cantaloupe (3/4 slip)",
+    "Persian",
+    "Onion sets",
+    "Potatoes, early crop"
+  ],
+  "mcgregor": {
+    "groups": {
+      "1": "Fruits and vegetables, 0 to 2\u00b0C (32 to 36\u00b0F), 90-95% relative humidity. Many products in this group produce ethylene.",
+      "2": "Fruits and vegetables, 0 to 2\u00b0C (32 to 36\u00b0F), 95-100% relative humidity. Many products in this group are sensitive to ethylene.",
+      "3": "Fruits and vegetables, 0 to 2\u00b0C (32 to 36\u00b0F), 65-75% relative humidity. Moisture will damage these products.",
+      "4": "Fruits and vegetables, 4.5\u00b0C (40\u00b0F), 90-95% relative humidity.",
+      "5": "Fruits and vegetables, 10\u00b0C (50\u00b0F), 85-90% relative humidity. Many of these products are sensitive to ethylene. These products also are sensitive to chilling injury.",
+      "6": "Fruits and vegetables, 13 to 15\u00b0C (55 to 60\u00b0F), 85-90% relative humidity. Many of these products produce ethylene. These products also are sensitive to chilling injury.",
+      "7": "Fruits and vegetables, 18 to 21\u00b0C (65 to 70\u00b0F), 85-90% relative humidity."
+    },
+    "members_listed": 159,
+    "members_without_catalog_match": [
+      {
+        "group": 1,
+        "member": "Asian pears"
+      },
+      {
+        "group": 1,
+        "member": "Barbados cherry"
+      },
+      {
+        "group": 1,
+        "member": "longan"
+      },
+      {
+        "group": 1,
+        "member": "loquat"
+      },
+      {
+        "group": 1,
+        "member": "cashew apple"
+      },
+      {
+        "group": 2,
+        "member": "Amaranth*"
+      },
+      {
+        "group": 2,
+        "member": "anise"
+      },
+      {
+        "group": 2,
+        "member": "daikon*"
+      },
+      {
+        "group": 2,
+        "member": "scorzonera"
+      },
+      {
+        "group": 2,
+        "member": "lo bok"
+      },
+      {
+        "group": 2,
+        "member": "water chestnut"
+      },
+      {
+        "group": 4,
+        "member": "cactus leaves"
+      },
+      {
+        "group": 4,
+        "member": "tamarillo"
+      },
+      {
+        "group": 4,
+        "member": "cactus pears"
+      },
+      {
+        "group": 4,
+        "member": "tangelos*"
+      },
+      {
+        "group": 4,
+        "member": "caimito"
+      },
+      {
+        "group": 4,
+        "member": "kumquat"
+      },
+      {
+        "group": 4,
+        "member": "mandarin*"
+      },
+      {
+        "group": 4,
+        "member": "ugli fruit*"
+      },
+      {
+        "group": 4,
+        "member": "clementine"
+      },
+      {
+        "group": 4,
+        "member": "yucca root"
+      },
+      {
+        "group": 4,
+        "member": "pepino"
+      },
+      {
+        "group": 5,
+        "member": "kiwano"
+      },
+      {
+        "group": 5,
+        "member": "pummelo"
+      },
+      {
+        "group": 5,
+        "member": "calamondin"
+      },
+      {
+        "group": 5,
+        "member": "malanga"
+      },
+      {
+        "group": 5,
+        "member": "chayote"
+      },
+      {
+        "group": 5,
+        "member": "tamarind"
+      },
+      {
+        "group": 5,
+        "member": "olive"
+      },
+      {
+        "group": 5,
+        "member": "taro root"
+      },
+      {
+        "group": 6,
+        "member": "atemoya"
+      },
+      {
+        "group": 6,
+        "member": "granadilla"
+      },
+      {
+        "group": 6,
+        "member": "passionfruit"
+      },
+      {
+        "group": 6,
+        "member": "babaco"
+      },
+      {
+        "group": 6,
+        "member": "jaboticaba"
+      },
+      {
+        "group": 6,
+        "member": "plantain"
+      },
+      {
+        "group": 6,
+        "member": "bitter melon"
+      },
+      {
+        "group": 6,
+        "member": "jackfruit"
+      },
+      {
+        "group": 6,
+        "member": "black sapote"
+      },
+      {
+        "group": 6,
+        "member": "langsat"
+      },
+      {
+        "group": 6,
+        "member": "boniato"
+      },
+      {
+        "group": 6,
+        "member": "rambutan"
+      },
+      {
+        "group": 6,
+        "member": "breadfruit"
+      },
+      {
+        "group": 6,
+        "member": "santol"
+      },
+      {
+        "group": 6,
+        "member": "canistel"
+      },
+      {
+        "group": 6,
+        "member": "mamey"
+      },
+      {
+        "group": 6,
+        "member": "soursop"
+      },
+      {
+        "group": 6,
+        "member": "carambola"
+      },
+      {
+        "group": 6,
+        "member": "sugar apple"
+      },
+      {
+        "group": 6,
+        "member": "cherimoya"
+      },
+      {
+        "group": 6,
+        "member": "mangosteen"
+      },
+      {
+        "group": 6,
+        "member": "tomatillos"
+      },
+      {
+        "group": 6,
+        "member": "feijoa"
+      },
+      {
+        "group": 7,
+        "member": "yams*"
+      },
+      {
+        "group": 7,
+        "member": "Pears (for ripening)"
+      },
+      {
+        "group": 7,
+        "member": "white sapote"
+      }
+    ],
+    "catalog_products_labelled": 107,
+    "catalog_products_multi_group": 26,
+    "exceptions": [
+      [
+        "figs",
+        "apples"
+      ],
+      [
+        "leeks",
+        "figs"
+      ],
+      [
+        "leeks",
+        "grapes"
+      ],
+      [
+        "onions_green",
+        "figs"
+      ],
+      [
+        "onions_green",
+        "grapes"
+      ],
+      [
+        "onions_green",
+        "mushrooms"
+      ],
+      [
+        "onions_green",
+        "rhubarb"
+      ],
+      [
+        "onions_green",
+        "corn_sweet"
+      ],
+      [
+        "sweet_potatoes",
+        "tomatoes_mature_green"
+      ],
+      [
+        "watermelon",
+        "tomatoes_mature_green"
+      ],
+      [
+        "sweet_potatoes",
+        "pears"
+      ],
+      [
+        "watermelon",
+        "pears"
+      ]
+    ]
+  },
+  "validation_problems": [],
+  "final": {
+    "rows": 155,
+    "by_category": {
+      "vegetable": 74,
+      "fruit": 46,
+      "dairy": 8,
+      "meat": 6,
+      "seafood": 6,
+      "frozen": 6,
+      "pharma": 6,
+      "poultry": 2,
+      "eggs": 1
+    },
+    "by_safety_class": {
+      "produce": 120,
+      "ready_to_eat": 12,
+      "raw_animal": 11,
+      "frozen": 6,
+      "pharma": 6
+    },
+    "rows_with_any_imputation": 105,
+    "columns": [
+      "product_id",
+      "name",
+      "category",
+      "frostmind_category",
+      "safety_class",
+      "t_min_c",
+      "t_max_c",
+      "t_opt_c",
+      "rh_min",
+      "rh_max",
+      "freeze_point_c",
+      "chilling_sensitive",
+      "chill_threshold_c",
+      "shelf_life_days",
+      "q10",
+      "ethylene_production",
+      "ethylene_sensitivity",
+      "hard_lo_c",
+      "hard_hi_c",
+      "compat_groups",
+      "source",
+      "source_url",
+      "notes",
+      "imputed_fields"
+    ]
+  }
+}

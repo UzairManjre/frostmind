@@ -64,3 +64,12 @@ def calibrate_and_evaluate(model, x_calib, y_calib, x_test, y_test) -> dict:
         "n_test": int(len(y_test)),
         "n_anomaly_test": int(y_test.sum()),
     }
+
+
+def youden_threshold(y_true, proba) -> float:
+    """Probability threshold maximising Youden's J (TPR - FPR) -- the classifier counterpart of
+    the threshold choice inside calibrate_and_evaluate() above, which is tied to an
+    IsolationForest's decision_function and so can't be reused for predict_proba outputs.
+    Always call it on out-of-fold / calibration predictions, never on the final test split."""
+    fpr, tpr, thresholds = roc_curve(pd.Series(y_true).astype(int).values, proba)
+    return float(min(1.0, thresholds[(tpr - fpr).argmax()]))

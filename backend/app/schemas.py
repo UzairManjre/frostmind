@@ -262,3 +262,82 @@ class ComplianceReportOut(BaseModel):
     narrative: str | None  # None means generation failed (Ollama unreachable/timeout/malformed
     # output) -- see app/llm_orchestrator.py's reliability contract; the admin UI must show this
     # as "couldn't generate right now, try again" and never fabricate a narrative client-side.
+
+
+# ---------- Load Planner (Model 4 + Model 5) ----------
+
+
+class ProductOut(BaseModel):
+    product_id: str
+    name: str
+    category: str
+    safety_class: str
+    frostmind_category: str
+    t_min_c: float | None
+    t_max_c: float | None
+    t_opt_c: float | None
+    rh_min: float | None
+    rh_max: float | None
+    chilling_sensitive: bool
+    ethylene_production: int
+    ethylene_sensitivity: int
+    compat_groups: str
+    source: str
+
+
+class PlanItemIn(BaseModel):
+    product_id: str
+    quantity_kg: float = Field(default=1.0, gt=0)
+
+
+class PlanRequest(BaseModel):
+    products: list[PlanItemIn] = Field(min_length=1, max_length=40)
+    truck_id: str | None = None
+    # Explicit reefer fluctuation override (deg C); otherwise taken from the truck's own recent
+    # readings, otherwise the real-data default (data/product_catalog/reefer_fluctuation.json).
+    sigma_c: float | None = Field(default=None, ge=0.0, le=5.0)
+
+
+class PlanPairOut(BaseModel):
+    a: str
+    b: str
+    probability: float | None
+    compatible: bool
+    extrapolated: bool
+    vetoes: list[str]
+    reasons: list[str]
+    warnings: list[str]
+
+
+class PlanGroupProductOut(BaseModel):
+    product_id: str
+    name: str
+    quantity_kg: float
+    expected_loss_pct_per_day: float
+
+
+class PlanGroupOut(BaseModel):
+    group_id: int
+    products: list[PlanGroupProductOut]
+    feasible: bool
+    recommended_setpoint_c: float | None
+    method: str  # "ml" | "physics" | "physics_fallback" | "infeasible"
+    physics_setpoint_c: float
+    student_setpoint_c: float | None
+    safe_range_c: list[float | None]
+    band_c: list[float]
+    expected_loss_pct_per_day: float
+    device_category: str
+    device_category_setpoint_c: float
+    device_category_within_1c: bool
+
+
+class PlanResponse(BaseModel):
+    sigma_c: float
+    sigma_source: str
+    model4_active: bool
+    model5_active: bool
+    compatibility_threshold: float | None
+    groups: list[PlanGroupOut]
+    pairs: list[PlanPairOut]
+    warnings: list[str]

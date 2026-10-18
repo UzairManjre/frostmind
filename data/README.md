@@ -13,6 +13,7 @@ of this live in `../scripts/` — see `../scripts/README.md` for how to run them
 | `kaggle_iot_temperature/` | Real, but **unlabeled** | EDA only, no model |
 | `references/` | N/A — citation only | Backs Model 3's simulation-first framing and shelf-life kinetics |
 | `frostmind_logs/` | Real, once you log it — **empty for now** | Model 1, once hardware logs exist |
+| `product_catalog/` | Real public storage tables (USDA HB66, Engineering ToolBox, McGregor/USDA AH-668, VT Extension) + cited regulatory bands; cleaned by `scripts/build_product_catalog.py` | Models 4 & 5 (Load Planner) — see its README |
 
 Model 2 (root-cause classifier) has no data folder here — it needs the INA219 power-draw
 signal, which is explicitly deferred hardware, not something any of these datasets can

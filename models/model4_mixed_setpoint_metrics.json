@@ -1,0 +1,489 @@
+{
+  "model": "hist_gradient_boosting",
+  "teacher": "common.products.optimize_setpoint (closed-form expected loss, 0.05 C grid, Z=2 chance constraints)",
+  "physics_constants": {
+    "KAPPA_CHILL": 0.05,
+    "KAPPA_SOFT": 0.01,
+    "KAPPA_FREEZE": 1.0,
+    "KAPPA_PHARMA": 0.05,
+    "SUPERCOOL_DELTA": 0.5,
+    "Z_CHANCE": 2.0,
+    "SIGMA_FLOOR": 0.2,
+    "GRID_STEP": 0.05
+  },
+  "feature_cols": [
+    "n_products",
+    "sigma_c",
+    "feasible_lo_c",
+    "feasible_hi_c",
+    "feasible_width_c",
+    "tmin_max_c",
+    "tmin_wmean_c",
+    "tmax_min_c",
+    "tmax_wmean_c",
+    "topt_min_c",
+    "topt_max_c",
+    "topt_wstd_c",
+    "wall_max_c",
+    "wall_sensitive_max_c",
+    "frac_chilling_sensitive",
+    "freeze_max_c",
+    "q10_wmean",
+    "log_sl_wmean",
+    "log_sl_min",
+    "frac_produce",
+    "frac_tcs",
+    "frac_frozen",
+    "frac_pharma",
+    "w_max"
+  ],
+  "target": "setpoint_c - topt_wmean_c (features shifted by the same anchor; see common.products.student_matrix)",
+  "sigma_source": "data/kaggle_cold_chain_milk (92 real transport sessions)",
+  "default_sigma_c": 0.306,
+  "n_products_train": 108,
+  "n_products_test": 47,
+  "n_loads_train": 16000,
+  "n_loads_test": 4000,
+  "load_strategy_mix": {
+    "same_mcgregor_group": 0.4,
+    "same_temperature_regime": 0.3,
+    "random": 0.3
+  },
+  "product_disjoint_test": {
+    "hist_gradient_boosting": {
+      "mae_c": 0.1593,
+      "rmse_c": 0.3161,
+      "r2": 0.9992,
+      "within_0_5c_pct": 93.62,
+      "within_1c_pct": 97.92,
+      "mean_regret_pct_per_day": 0.28338,
+      "p95_regret_pct_per_day": 0.23144
+    },
+    "random_forest": {
+      "mae_c": 0.1624,
+      "rmse_c": 0.3363,
+      "r2": 0.999,
+      "within_0_5c_pct": 93.45,
+      "within_1c_pct": 97.88,
+      "mean_regret_pct_per_day": 0.10825,
+      "p95_regret_pct_per_day": 0.25362
+    },
+    "baseline_range_midpoint": {
+      "mae_c": 1.3226,
+      "rmse_c": 2.3211,
+      "r2": 0.9545,
+      "within_0_5c_pct": 48.1,
+      "within_1c_pct": 65.4,
+      "mean_regret_pct_per_day": 7.15736,
+      "p95_regret_pct_per_day": 44.03249
+    },
+    "baseline_weighted_mean_topt": {
+      "mae_c": 1.4154,
+      "rmse_c": 2.4327,
+      "r2": 0.9501,
+      "within_0_5c_pct": 44.45,
+      "within_1c_pct": 62.9,
+      "mean_regret_pct_per_day": 5.29762,
+      "p95_regret_pct_per_day": 37.37669
+    },
+    "baseline_warmest_product_topt": {
+      "mae_c": 1.3589,
+      "rmse_c": 1.8653,
+      "r2": 0.9706,
+      "within_0_5c_pct": 31.57,
+      "within_1c_pct": 50.8,
+      "mean_regret_pct_per_day": 0.72745,
+      "p95_regret_pct_per_day": 2.2594
+    }
+  },
+  "mcgregor_external_validation": [
+    {
+      "group": 1,
+      "who": "student",
+      "n": 101,
+      "inside_pct": 1.0,
+      "within_0_5_pct": 43.6,
+      "mean_dist_c": 1.88,
+      "median_setpoint": -0.20805667205530187
+    },
+    {
+      "group": 1,
+      "who": "teacher",
+      "n": 101,
+      "inside_pct": 6.9,
+      "within_0_5_pct": 42.6,
+      "mean_dist_c": 1.88,
+      "median_setpoint": -0.2
+    },
+    {
+      "group": 2,
+      "who": "student",
+      "n": 101,
+      "inside_pct": 31.7,
+      "within_0_5_pct": 88.1,
+      "mean_dist_c": 0.31,
+      "median_setpoint": -0.0891428970496354
+    },
+    {
+      "group": 2,
+      "who": "teacher",
+      "n": 101,
+      "inside_pct": 35.6,
+      "within_0_5_pct": 91.1,
+      "mean_dist_c": 0.304,
+      "median_setpoint": -0.05
+    },
+    {
+      "group": 3,
+      "who": "student",
+      "n": 1,
+      "inside_pct": 100.0,
+      "within_0_5_pct": 100.0,
+      "mean_dist_c": 0.0,
+      "median_setpoint": 0.2600299935568503
+    },
+    {
+      "group": 3,
+      "who": "teacher",
+      "n": 1,
+      "inside_pct": 100.0,
+      "within_0_5_pct": 100.0,
+      "mean_dist_c": 0.0,
+      "median_setpoint": 0.35
+    },
+    {
+      "group": 4,
+      "who": "student",
+      "n": 101,
+      "inside_pct": 32.7,
+      "within_0_5_pct": 33.7,
+      "mean_dist_c": 3.628,
+      "median_setpoint": 10.854685140242385
+    },
+    {
+      "group": 4,
+      "who": "teacher",
+      "n": 101,
+      "inside_pct": 32.7,
+      "within_0_5_pct": 33.7,
+      "mean_dist_c": 3.598,
+      "median_setpoint": 10.85
+    },
+    {
+      "group": 5,
+      "who": "student",
+      "n": 101,
+      "inside_pct": 44.6,
+      "within_0_5_pct": 44.6,
+      "mean_dist_c": 0.976,
+      "median_setpoint": 7.794424630470045
+    },
+    {
+      "group": 5,
+      "who": "teacher",
+      "n": 101,
+      "inside_pct": 44.6,
+      "within_0_5_pct": 44.6,
+      "mean_dist_c": 0.967,
+      "median_setpoint": 7.55
+    },
+    {
+      "group": 6,
+      "who": "student",
+      "n": 101,
+      "inside_pct": 15.8,
+      "within_0_5_pct": 45.5,
+      "mean_dist_c": 1.232,
+      "median_setpoint": 13.165066905954014
+    },
+    {
+      "group": 6,
+      "who": "teacher",
+      "n": 101,
+      "inside_pct": 16.8,
+      "within_0_5_pct": 46.5,
+      "mean_dist_c": 1.234,
+      "median_setpoint": 13.2
+    },
+    {
+      "group": 7,
+      "who": "student",
+      "n": 101,
+      "inside_pct": 0.0,
+      "within_0_5_pct": 0.0,
+      "mean_dist_c": 4.664,
+      "median_setpoint": 13.35795745337489
+    },
+    {
+      "group": 7,
+      "who": "teacher",
+      "n": 101,
+      "inside_pct": 0.0,
+      "within_0_5_pct": 0.0,
+      "mean_dist_c": 4.904,
+      "median_setpoint": 13.1
+    }
+  ],
+  "mcgregor_note": "G4 and G5 are single published values (4.5 C, 10 C), scored as +/-1 C.",
+  "mcgregor_source_consistency": {
+    "1": {
+      "members": 34,
+      "own_range_overlaps_group_pct": 82.4,
+      "non_overlapping": [
+        "cherries_sweet",
+        "coconuts",
+        "lychees",
+        "oranges",
+        "pears",
+        "pomegranates"
+      ]
+    },
+    "2": {
+      "members": 59,
+      "own_range_overlaps_group_pct": 96.6,
+      "non_overlapping": [
+        "cherries_sweet",
+        "pomegranates"
+      ]
+    },
+    "3": {
+      "members": 2,
+      "own_range_overlaps_group_pct": 100.0,
+      "non_overlapping": []
+    },
+    "4": {
+      "members": 6,
+      "own_range_overlaps_group_pct": 83.3,
+      "non_overlapping": [
+        "lemons"
+      ]
+    },
+    "5": {
+      "members": 8,
+      "own_range_overlaps_group_pct": 75.0,
+      "non_overlapping": [
+        "beans_green_or_snap",
+        "beans_lima"
+      ]
+    },
+    "6": {
+      "members": 20,
+      "own_range_overlaps_group_pct": 65.0,
+      "non_overlapping": [
+        "avocados_ripe",
+        "avocados_unripe",
+        "bananas_green",
+        "ginger_root",
+        "guavas",
+        "potatoes",
+        "squashes_winter"
+      ]
+    },
+    "7": {
+      "members": 4,
+      "own_range_overlaps_group_pct": 75.0,
+      "non_overlapping": [
+        "sweet_potatoes"
+      ]
+    }
+  },
+  "single_product_inside_own_range_pct": 89.9,
+  "teacher_sensitivity": {
+    "KAPPA_FREEZE=0.3": {
+      "mean_abs_shift_c": 0.031,
+      "max_abs_shift_c": 0.45
+    },
+    "KAPPA_FREEZE=3.0": {
+      "mean_abs_shift_c": 0.043,
+      "max_abs_shift_c": 0.4
+    },
+    "KAPPA_CHILL=0.02": {
+      "mean_abs_shift_c": 0.154,
+      "max_abs_shift_c": 2.4
+    },
+    "KAPPA_CHILL=0.1": {
+      "mean_abs_shift_c": 0.086,
+      "max_abs_shift_c": 1.1
+    },
+    "KAPPA_SOFT=0.003": {
+      "mean_abs_shift_c": 0.135,
+      "max_abs_shift_c": 2.6
+    },
+    "KAPPA_SOFT=0.03": {
+      "mean_abs_shift_c": 0.145,
+      "max_abs_shift_c": 1.75
+    },
+    "SUPERCOOL_DELTA=0.0": {
+      "mean_abs_shift_c": 0.148,
+      "max_abs_shift_c": 0.5
+    },
+    "SUPERCOOL_DELTA=1.0": {
+      "mean_abs_shift_c": 0.069,
+      "max_abs_shift_c": 0.5
+    },
+    "produce_Q10_x0.8": {
+      "mean_abs_shift_c": 0.091,
+      "max_abs_shift_c": 0.85
+    },
+    "produce_Q10_x1.2": {
+      "mean_abs_shift_c": 0.063,
+      "max_abs_shift_c": 0.75
+    }
+  },
+  "worked_examples": [
+    {
+      "load": "Apples + pears + grapes",
+      "products": [
+        "apples",
+        "pears",
+        "grapes"
+      ],
+      "sigma_c": 0.306,
+      "feasible": true,
+      "teacher_setpoint_c": -0.7,
+      "student_setpoint_c": -0.5,
+      "band_c": [
+        -1.15,
+        0.65
+      ],
+      "expected_loss_pct_per_day": 1.7455
+    },
+    {
+      "load": "Lettuce + broccoli + spinach",
+      "products": [
+        "lettuce",
+        "broccoli",
+        "spinach"
+      ],
+      "sigma_c": 0.306,
+      "feasible": true,
+      "teacher_setpoint_c": 0.05,
+      "student_setpoint_c": 0.04,
+      "band_c": [
+        -0.05,
+        1.3
+      ],
+      "expected_loss_pct_per_day": 7.6923
+    },
+    {
+      "load": "Bananas + mangos + avocados (ripe)",
+      "products": [
+        "bananas_ripe",
+        "mangos",
+        "avocados_ripe"
+      ],
+      "sigma_c": 0.306,
+      "feasible": true,
+      "teacher_setpoint_c": 13.25,
+      "student_setpoint_c": 13.07,
+      "band_c": [
+        12.55,
+        14.55
+      ],
+      "expected_loss_pct_per_day": 6.8928
+    },
+    {
+      "load": "Cucumbers + peppers + eggplant",
+      "products": [
+        "cucumbers",
+        "peppers_sweet",
+        "eggplant"
+      ],
+      "sigma_c": 0.306,
+      "feasible": true,
+      "teacher_setpoint_c": 9.85,
+      "student_setpoint_c": 9.67,
+      "band_c": [
+        9.05,
+        11.15
+      ],
+      "expected_loss_pct_per_day": 9.2621
+    },
+    {
+      "load": "Milk + yogurt + cheese",
+      "products": [
+        "milk_pasteurized",
+        "yogurt",
+        "cheese_hard_cheddar_swiss"
+      ],
+      "sigma_c": 0.306,
+      "feasible": true,
+      "teacher_setpoint_c": 0.4,
+      "student_setpoint_c": 0.39,
+      "band_c": [
+        -0.25,
+        1.6
+      ],
+      "expected_loss_pct_per_day": 4.9466
+    },
+    {
+      "load": "Chicken + beef (raw)",
+      "products": [
+        "poultry_fresh",
+        "beef_fresh_steaks_and_roasts"
+      ],
+      "sigma_c": 0.306,
+      "feasible": true,
+      "teacher_setpoint_c": -0.75,
+      "student_setpoint_c": -0.76,
+      "band_c": [
+        -0.85,
+        0.85
+      ],
+      "expected_loss_pct_per_day": 37.7985
+    },
+    {
+      "load": "Vaccines + insulin",
+      "products": [
+        "vaccines_refrigerated",
+        "insulin_unopened"
+      ],
+      "sigma_c": 0.306,
+      "feasible": true,
+      "teacher_setpoint_c": 5.0,
+      "student_setpoint_c": 4.95,
+      "band_c": [
+        2.65,
+        7.35
+      ],
+      "expected_loss_pct_per_day": 0.0
+    },
+    {
+      "load": "Frozen vegetables + ice cream",
+      "products": [
+        "frozen_vegetables",
+        "ice_cream"
+      ],
+      "sigma_c": 0.306,
+      "feasible": true,
+      "teacher_setpoint_c": -24.6,
+      "student_setpoint_c": -24.59,
+      "band_c": [
+        -25.05,
+        -22.6
+      ],
+      "expected_loss_pct_per_day": 0.3106
+    },
+    {
+      "load": "Lettuce + bananas (incompatible)",
+      "products": [
+        "lettuce",
+        "bananas_ripe"
+      ],
+      "sigma_c": 0.306,
+      "feasible": true,
+      "teacher_setpoint_c": 13.2,
+      "student_setpoint_c": 13.33,
+      "band_c": [
+        12.5,
+        14.55
+      ],
+      "expected_loss_pct_per_day": 11.308
+    }
+  ],
+  "serving_guard": "prediction clipped to the chance-constrained safe interval; backend falls back to the teacher if |student - teacher| > 0.5 C",
+  "hyperparameters": {
+    "hist_gradient_boosting": "HistGradientBoostingRegressor(l2_regularization=1.0, learning_rate=0.05,\n                              max_depth=6, max_iter=600, random_state=42)",
+    "random_forest": "Pipeline(steps=[('simpleimputer', SimpleImputer(strategy='median')),\n                ('randomforestregressor',\n                 RandomForestRegressor(min_samples_leaf=3, n_estimators=300,\n                                       n_jobs=-1, random_state=42))])"
+  }
+}
