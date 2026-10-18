@@ -16,6 +16,15 @@ export class ApiError extends Error {
   }
 }
 
+// The backend stores UTC datetimes but SQLite drops the tzinfo, so they arrive as naive ISO
+// strings ("2026-10-18T10:41:03.176266"). `new Date()` would read those as *local* time, skewing
+// every timestamp by the viewer's UTC offset -- so mark them as UTC on the way in.
+const NAIVE_ISO_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$/;
+
+function utcReviver(_key: string, value: unknown) {
+  return typeof value === "string" && NAIVE_ISO_DATETIME.test(value) ? `${value}Z` : value;
+}
+
 async function request<T>(path: string, token: string | null, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -45,7 +54,7 @@ async function request<T>(path: string, token: string | null, options: RequestIn
   }
   const contentType = res.headers.get("content-type") || "";
   if (contentType.includes("application/json")) {
-    return res.json() as Promise<T>;
+    return JSON.parse(await res.text(), utcReviver) as T;
   }
   return res.text() as unknown as Promise<T>;
 }

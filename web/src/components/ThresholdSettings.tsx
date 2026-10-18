@@ -11,6 +11,8 @@
 import { useState } from "react";
 import { updateShipmentThresholds } from "@/lib/api";
 import type { Shipment } from "@/lib/types";
+import { CheckIcon, SlidersIcon } from "@/components/Icons";
+import { Panel } from "@/components/ui";
 
 function ThresholdField({
   label,
@@ -24,10 +26,10 @@ function ThresholdField({
   onChange: (v: string) => void;
 }) {
   return (
-    <label className="block text-sm text-slate-400">
-      <span className="mb-1 flex items-center justify-between">
-        <span>{label}</span>
-        <span className="text-xs text-slate-500">{unitHint}</span>
+    <label className="block text-xs text-dim">
+      <span className="mb-1.5 flex items-center justify-between">
+        <span className="font-medium text-peri-100">{label}</span>
+        <span className="font-mono text-[10px] text-faint">{unitHint}</span>
       </span>
       <div className="flex gap-2">
         <input
@@ -36,13 +38,13 @@ function ThresholdField({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Using category default"
-          className="w-full rounded border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100 placeholder:text-slate-600"
+          className="field num"
         />
         {value !== "" && (
           <button
             type="button"
             onClick={() => onChange("")}
-            className="shrink-0 rounded border border-slate-700 px-2.5 text-xs text-slate-400 hover:bg-slate-800"
+            className="btn btn-ghost shrink-0 !h-10"
             title="Reset to category default"
           >
             Reset
@@ -57,10 +59,12 @@ export function ThresholdSettings({
   token,
   shipment,
   onUpdated,
+  index,
 }: {
   token: string;
   shipment: Shipment;
   onUpdated: () => void;
+  index?: number;
 }) {
   // "" means "no override -- use category default" (renders via the input's placeholder, per
   // the plan's explicit ask: "Null/unset should read as 'using category default,' not a blank
@@ -113,27 +117,32 @@ export function ThresholdSettings({
   }
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
-      <h3 className="mb-1 text-sm font-medium text-slate-400">Alert threshold overrides</h3>
-      <p className="mb-3 text-xs text-slate-500">
-        Per-shipment overrides for this category&apos;s default anomaly thresholds. Leave a field blank
-        (or hit Reset) to fall back to the category default.
-      </p>
-      <form onSubmit={handleSave} className="space-y-3">
-        <ThresholdField label="Rate-of-change threshold" unitHint="deg C / min" value={rate} onChange={setRate} />
-        <ThresholdField label="Deviation threshold" unitHint="deg C from reference" value={deviation} onChange={setDeviation} />
-        {error && <p className="text-sm text-red-400">{error}</p>}
-        <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded bg-sky-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-600 disabled:opacity-50"
-          >
+    <Panel
+      index={index}
+      title="Alert threshold overrides"
+      subtitle="Per-shipment overrides for this category's default anomaly thresholds. Leave a field blank (or hit Reset) to fall back to the category default."
+      action={
+        <span className="icon-tile">
+          <SlidersIcon className="h-4 w-4" />
+        </span>
+      }
+    >
+      <form onSubmit={handleSave} className="space-y-4">
+        <ThresholdField label="Rate-of-change threshold" unitHint="°C / min" value={rate} onChange={setRate} />
+        <ThresholdField label="Deviation threshold" unitHint="°C from reference" value={deviation} onChange={setDeviation} />
+        {error && <p className="text-xs text-danger">{error}</p>}
+        <div className="flex items-center gap-3 pt-1">
+          <button type="submit" disabled={saving} className="btn btn-primary">
             {saving ? "Saving..." : "Save thresholds"}
           </button>
-          {savedAt && !saving && !error && <span className="text-xs text-emerald-400">Saved.</span>}
+          {savedAt && !saving && !error && (
+            <span className="inline-flex items-center gap-1 text-xs text-ok">
+              <CheckIcon className="h-3.5 w-3.5" />
+              Saved
+            </span>
+          )}
         </div>
       </form>
-    </div>
+    </Panel>
   );
 }

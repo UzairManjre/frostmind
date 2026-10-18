@@ -34,7 +34,7 @@ function stepHeader(stepNum, total, title) {
   return `
     <div class="step-header">
       <div class="step-progress" role="progressbar" aria-valuenow="${stepNum}" aria-valuemin="1" aria-valuemax="${total}" aria-label="Step ${stepNum} of ${total}">${dots}</div>
-      <span class="step-badge">Step ${stepNum} of ${total}</span>
+      <span class="step-badge">Step ${stepNum} of ${total} <span class="idx">(${String(stepNum).padStart(2, "0")}) / ${String(total).padStart(2, "0")}</span></span>
       <h2>${title}</h2>
     </div>`;
 }
@@ -331,8 +331,8 @@ export function renderConfirmLiveData(ctx) {
       faith. Wait for at least one reading before continuing.</p>
 
       <div class="grid">
+        <div class="tile highlight"><span class="tile-label">Temperature</span><span class="tile-value" id="live-temp">-</span></div>
         <div class="tile"><span class="tile-label">Last update</span><span class="tile-value" id="live-time">-</span></div>
-        <div class="tile"><span class="tile-label">Temp</span><span class="tile-value" id="live-temp">-</span></div>
         <div class="tile"><span class="tile-label">Humidity</span><span class="tile-value" id="live-hum">-</span></div>
         <div class="tile"><span class="tile-label">Door</span><span class="tile-value" id="live-door">-</span></div>
         <div class="tile"><span class="tile-label">Alert</span><span class="tile-value" id="live-alert">-</span></div>

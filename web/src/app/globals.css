@@ -1,26 +1,414 @@
 @import "tailwindcss";
 
+/* FROSTMIND design system -- deep ink navy, royal-blue streak bands, white highlight cards,
+   condensed light display type. Every page builds from the tokens + component classes below. */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --ink-950: #05071a;
+  --ink-900: #090c26;
+  --ink-850: #0d1133;
+  --ink-800: #131a47;
+  --royal-700: #1b2ab8;
+  --royal-600: #2236d9;
+  --royal-500: #2f45e6;
+  --royal-400: #4b61f5;
+  --royal-300: #7d8dff;
+  --peri-200: #b9c2ff;
+  --peri-100: #dde2ff;
+  --peri-50: #eef0ff;
+
+  --text: #eef0ff;
+  --text-dim: rgba(221, 226, 255, 0.66);
+  --text-faint: rgba(221, 226, 255, 0.4);
+  --line: rgba(160, 175, 255, 0.13);
+  --line-strong: rgba(160, 175, 255, 0.26);
+
+  --ok: #4fe0b0;
+  --warn: #ffc65c;
+  --hot: #ff9257;
+  --danger: #ff5d73;
+
+  --background: var(--ink-950);
+  --foreground: var(--text);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+
+  --color-ink-950: var(--ink-950);
+  --color-ink-900: var(--ink-900);
+  --color-ink-850: var(--ink-850);
+  --color-ink-800: var(--ink-800);
+  --color-royal-700: var(--royal-700);
+  --color-royal-600: var(--royal-600);
+  --color-royal-500: var(--royal-500);
+  --color-royal-400: var(--royal-400);
+  --color-royal-300: var(--royal-300);
+  --color-peri-200: var(--peri-200);
+  --color-peri-100: var(--peri-100);
+  --color-peri-50: var(--peri-50);
+  --color-dim: var(--text-dim);
+  --color-faint: var(--text-faint);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-hot: var(--hot);
+  --color-danger: var(--danger);
+
+  /* SF Pro first (native on Apple devices), Inter as the closest web-loaded stand-in elsewhere. */
+  --font-sans: "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, var(--font-inter), "Segoe UI", sans-serif;
+  --font-display: var(--font-barlow-condensed), "SF Pro Display", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  color-scheme: dark;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
+}
+
+::selection {
+  background: var(--royal-500);
+  color: #fff;
+}
+
+@layer components {
+/* ---------- Streak bands (the vertical light columns from the brand slides) ---------- */
+
+.streaks {
+  background-color: var(--royal-600);
+  background-image:
+    linear-gradient(180deg, rgba(5, 7, 26, 0) 35%, rgba(5, 7, 26, 0.45) 100%),
+    linear-gradient(90deg,
+      transparent 0 8%, rgba(150, 168, 255, 0.28) 9.5% 11%, transparent 13% 26%,
+      rgba(170, 185, 255, 0.2) 27.5% 28.5%, transparent 30.5% 47%,
+      rgba(130, 150, 255, 0.22) 48.5% 51%, transparent 53% 100%),
+    linear-gradient(90deg,
+      #2b3fe0 0%, #3a50f0 4%, #2639d6 7%, #4458f5 11%, #2b3fe0 15%,
+      #1f31c9 19%, #3449eb 24%, #5266fa 28%, #2a3ddd 33%, #1d2ebf 38%,
+      #3247e6 43%, #2235cf 49%, #1a29b0 55%, #283bd8 60%, #1a27a3 66%,
+      #121c80 72%, #1b2898 77%, #0e1665 84%, #0a1050 91%, #070b38 100%);
+  background-size: 100% 100%, 140% 100%, 100% 100%;
+  animation: streak-drift 18s ease-in-out infinite alternate;
+}
+
+/* Navy-led variant: bands only bleed in from the right edge (slide 3 of the brand deck). */
+.streaks-deep {
+  background-color: var(--ink-900);
+  background-image:
+    linear-gradient(180deg, rgba(5, 7, 26, 0) 40%, rgba(5, 7, 26, 0.5) 100%),
+    linear-gradient(90deg,
+      transparent 0 62%, rgba(150, 168, 255, 0.16) 66% 67.5%, transparent 70% 82%,
+      rgba(170, 185, 255, 0.18) 85% 86%, transparent 88% 100%),
+    linear-gradient(90deg,
+      #070a26 0%, #0a0f3d 30%, #0d1452 48%, #121c78 60%, #1b2aa8 70%,
+      #2236d1 78%, #3348e8 86%, #2a3edb 92%, #4b61f5 100%);
+  background-size: 100% 100%, 140% 100%, 100% 100%;
+  animation: streak-drift 22s ease-in-out infinite alternate;
+}
+
+/* White-led variant for the sign-in screen (slide 4). */
+.streaks-light {
+  background-color: #fff;
+  background-image: linear-gradient(90deg,
+    #fff 0%, #e9ecff 5%, #fff 9%, #5a6ef7 13%, #c9d0ff 17%, #3a50f0 21%, #eef0ff 26%,
+    #7d8dff 30%, #4258f2 35%, #dfe3ff 40%, #fff 44%, #6175f8 49%, #3247e6 54%, #b7c0ff 59%,
+    #fff 63%, #5468f6 68%, #2e43e3 73%, #a6b1ff 78%, #fff 83%, #7486fa 89%, #3d52ef 94%, #c8cfff 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 22%, #000 58%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0%, #000 22%, #000 58%, transparent 100%);
+}
+
+@keyframes streak-drift {
+  from {
+    background-position: 0 0, 0% 0, 0 0;
+  }
+  to {
+    background-position: 0 0, 100% 0, 0 0;
+  }
+}
+
+/* ---------- Surfaces ---------- */
+
+.panel {
+  position: relative;
+  background: linear-gradient(180deg, rgba(19, 26, 71, 0.55) 0%, rgba(13, 17, 51, 0.55) 100%);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+/* Glass card that sits ON a streak hero. */
+.glass {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.09) 0%, rgba(255, 255, 255, 0.03) 100%);
+  border: 1px solid rgba(220, 226, 255, 0.22);
+  border-radius: 3px;
+  backdrop-filter: blur(6px);
+}
+
+/* The white "this is the one that matters" card. */
+.highlight {
+  background: #fff;
+  color: var(--ink-950);
+  border-radius: 3px;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.9),
+    0 0 48px -6px rgba(140, 160, 255, 0.75),
+    0 20px 40px -20px rgba(5, 7, 26, 0.6);
+}
+
+/* ---------- Type helpers ---------- */
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 300;
+  letter-spacing: -0.01em;
+  line-height: 0.98;
+}
+
+.eyebrow {
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--text-dim);
+}
+
+.idx {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Label with a left-to-right fade, like "Revenue Growth" under the slide stats. */
+.chip-fade {
+  display: inline-block;
+  padding: 1px 28px 1px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #fff;
+  background: linear-gradient(90deg, rgba(160, 175, 255, 0.55) 0%, rgba(160, 175, 255, 0) 100%);
+}
+
+.highlight .chip-fade {
+  color: var(--ink-950);
+  background: linear-gradient(90deg, rgba(47, 69, 230, 0.35) 0%, rgba(47, 69, 230, 0) 100%);
+}
+
+.icon-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: #04050f;
+  color: #fff;
+  border-radius: 1px;
+  flex: none;
+}
+
+.highlight .icon-tile {
+  background: var(--royal-600);
+}
+
+/* ---------- Controls ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  height: 2.25rem;
+  padding: 0 0.95rem;
+  border-radius: 3px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.08s ease;
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn:focus-visible,
+.field:focus-visible {
+  outline: 2px solid var(--royal-300);
+  outline-offset: 2px;
+}
+
+.btn-sm {
+  height: 1.875rem;
+  padding: 0 0.7rem;
+  font-size: 0.75rem;
+}
+
+.btn-primary {
+  background: #fff;
+  color: var(--ink-950);
+  box-shadow: 0 0 24px -8px rgba(140, 160, 255, 0.8);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--peri-100);
+}
+
+.btn-royal {
+  background: var(--royal-500);
+  color: #fff;
+}
+
+.btn-royal:hover:not(:disabled) {
+  background: var(--royal-400);
+}
+
+.btn-ghost {
+  background: rgba(160, 175, 255, 0.04);
+  color: var(--peri-100);
+  border: 1px solid var(--line-strong);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: rgba(160, 175, 255, 0.1);
+  border-color: rgba(160, 175, 255, 0.4);
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid rgba(255, 93, 115, 0.4);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: rgba(255, 93, 115, 0.1);
+}
+
+.field {
+  width: 100%;
+  height: 2.5rem;
+  padding: 0 0.8rem;
+  border-radius: 3px;
+  border: 1px solid var(--line-strong);
+  background: rgba(5, 7, 26, 0.6);
+  color: var(--text);
+  font-size: 0.875rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.field::placeholder {
+  color: var(--text-faint);
+}
+
+.field:focus {
+  outline: none;
+  border-color: var(--royal-300);
+  box-shadow: 0 0 0 3px rgba(75, 97, 245, 0.25);
+}
+
+/* ---------- Tables ---------- */
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.data-table thead th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.data-table tbody td {
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid rgba(160, 175, 255, 0.07);
+  vertical-align: middle;
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tbody tr {
+  transition: background-color 0.12s ease;
+}
+
+.data-table tbody tr:hover {
+  background: rgba(75, 97, 245, 0.08);
+}
+}
+
+/* ---------- Motion ---------- */
+
+.rise {
+  animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.live-dot {
+  position: relative;
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--ok);
+}
+
+.live-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  animation: ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes ping {
+  75%,
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .streaks,
+  .streaks-deep,
+  .rise,
+  .live-dot::after {
+    animation: none;
+  }
 }

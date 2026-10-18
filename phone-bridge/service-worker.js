@@ -5,7 +5,8 @@
 // any cache under a stale name, so this bump is what makes an already-installed PWA pick up the
 // new file instead of serving a 404/opaque error for it out of a v1 cache that never knew it
 // existed.
-const CACHE_NAME = "frostmind-bridge-v2";
+// v3: UI redesign (new css/style.css + index.html markup).
+const CACHE_NAME = "frostmind-bridge-v3";
 const APP_SHELL = [
   "./",
   "./index.html",

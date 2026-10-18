@@ -9,16 +9,21 @@
 
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { BoxIcon } from "@/components/Icons";
 
 export function LoadingState({ label = "Loading..." }: { label?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-10 text-slate-400">
-      <span
-        className="h-6 w-6 animate-spin rounded-full border-2 border-slate-700 border-t-sky-400"
-        role="status"
-        aria-label="Loading"
-      />
-      <p className="text-sm">{label}</p>
+    <div className="panel flex flex-col items-center justify-center gap-4 p-12 text-dim">
+      <div className="flex h-6 items-end gap-1" role="status" aria-label="Loading">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <span
+            key={i}
+            className="w-1 animate-pulse rounded-full bg-gradient-to-t from-royal-500 to-peri-200"
+            style={{ height: `${10 + ((i * 7) % 14)}px`, animationDelay: `${i * 120}ms` }}
+          />
+        ))}
+      </div>
+      <p className="text-xs">{label}</p>
     </div>
   );
 }
@@ -33,22 +38,13 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-slate-800 bg-slate-900/20 p-10 text-center">
-      <svg
-        className="h-9 w-9 text-slate-600"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.5}
-        aria-hidden="true"
-      >
-        <rect x="3" y="7" width="18" height="13" rx="2" />
-        <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-        <path d="M3 12h18" strokeDasharray="2 2" />
-      </svg>
-      <p className="font-medium text-slate-300">{title}</p>
-      {hint && <p className="max-w-sm text-sm text-slate-500">{hint}</p>}
-      {action && <div className="mt-2">{action}</div>}
+    <div className="flex flex-col items-center justify-center gap-2 rounded-[4px] border border-dashed border-line-strong bg-white/[0.015] p-10 text-center">
+      <span className="icon-tile mb-2 !h-10 !w-10 !bg-white/[0.06] text-peri-100/70">
+        <BoxIcon className="h-5 w-5" />
+      </span>
+      <p className="text-sm font-medium text-peri-50">{title}</p>
+      {hint && <p className="max-w-sm text-xs leading-relaxed text-faint">{hint}</p>}
+      {action && <div className="mt-3">{action}</div>}
     </div>
   );
 }
@@ -80,38 +76,30 @@ export function ErrorState({
   }
 
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-red-900/50 bg-red-950/20 p-8 text-center">
-      <svg
-        className="h-8 w-8 text-red-400"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.5}
-        aria-hidden="true"
-      >
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 8v5" />
-        <path d="M12 16h.01" />
-      </svg>
-      <p className="font-medium text-red-300">{title}</p>
-      <p className="max-w-md text-sm text-red-400/80">{detail}</p>
-      <div className="mt-2 flex gap-2">
+    <div className="flex flex-col items-center justify-center gap-2 rounded-[4px] border border-danger/30 bg-danger/[0.06] p-10 text-center">
+      <span className="mb-2 flex h-10 w-10 items-center justify-center rounded-[2px] bg-danger/15 text-danger">
+        <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 8v5" />
+          <path d="M12 16h.01" />
+        </svg>
+      </span>
+      <p className="text-sm font-medium text-peri-50">{title}</p>
+      <p className="max-w-md text-xs leading-relaxed text-dim">{detail}</p>
+      <div className="mt-3 flex gap-2">
         {status === 401 || status === 403 ? (
           <button
             onClick={() => {
               logout();
               router.push("/login");
             }}
-            className="rounded bg-red-800 px-3 py-1.5 text-xs font-medium text-red-50 hover:bg-red-700"
+            className="btn btn-primary btn-sm"
           >
             Log out and sign in again
           </button>
         ) : (
           onRetry && (
-            <button
-              onClick={onRetry}
-              className="rounded border border-red-800 px-3 py-1.5 text-xs font-medium text-red-200 hover:bg-red-900/40"
-            >
+            <button onClick={onRetry} className="btn btn-ghost btn-sm">
               Retry
             </button>
           )

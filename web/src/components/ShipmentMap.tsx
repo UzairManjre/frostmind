@@ -6,6 +6,7 @@
 // key: a plain OpenStreetMap "export/embed" iframe, per the plan's explicit instruction.
 
 import { EmptyState } from "./StateViews";
+import { ArrowUpRightIcon } from "./Icons";
 
 // Half-width/height of the bounding box in degrees. ~0.01 deg is roughly a 1-2km window at
 // mid-latitudes -- tight enough to actually show the marker's street-level context, loose enough
@@ -32,21 +33,25 @@ export function ShipmentMap({ lat, lng }: { lat: number | null | undefined; lng:
 
   return (
     <div>
-      <div className="overflow-hidden rounded-lg border border-slate-800">
+      <div className="relative overflow-hidden rounded-[3px] border border-line">
+        {/* invert + hue-rotate turns the light OSM tiles into a navy map that matches the UI
+            while keeping the marker's original hue */}
         <iframe
           title="Shipment location"
-          className="h-64 w-full"
+          className="h-72 w-full"
           src={embedUrl}
-          style={{ border: 0 }}
+          style={{ border: 0, filter: "invert(0.92) hue-rotate(180deg) saturate(1.3) brightness(0.9) contrast(0.95)" }}
           loading="lazy"
         />
+        <div className="pointer-events-none absolute inset-0 shadow-[inset_0_0_40px_rgba(5,7,26,0.7)]" />
       </div>
-      <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-        <span>
+      <div className="mt-3 flex items-center justify-between text-xs">
+        <span className="font-mono text-[11px] text-faint">
           {lat.toFixed(5)}, {lng.toFixed(5)}
         </span>
-        <a href={viewUrl} target="_blank" rel="noreferrer" className="text-sky-300 hover:underline">
+        <a href={viewUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-royal-300 hover:text-peri-100">
           Open larger map
+          <ArrowUpRightIcon className="h-3.5 w-3.5" />
         </a>
       </div>
     </div>
