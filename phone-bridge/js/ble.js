@@ -91,8 +91,11 @@ export class BleBridge extends EventTarget {
       );
     }
 
+    // Filters are OR'd: match the Nordic UART service UUID OR the advertised name. The name
+    // filter is a safety net -- a 128-bit UUID + flags + the name can overflow the 31-byte
+    // advertising packet, and some phones then only see one of them.
     this.device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [BLE.SERVICE_UUID] }],
+      filters: [{ services: [BLE.SERVICE_UUID] }, { namePrefix: "FROSTMIND" }],
       optionalServices: [BLE.SERVICE_UUID],
     });
 

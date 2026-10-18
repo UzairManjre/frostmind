@@ -9,7 +9,7 @@ import secrets
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -139,6 +139,17 @@ class Shipment(Base):
     # or if |rate_of_change| exceeds alert_rate_threshold_override -- see app/routers/ingest.py.
     alert_rate_threshold_override: Mapped[float | None] = mapped_column(Float, nullable=True)
     alert_deviation_threshold_override: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Mixed loads (Load Planner, Models 4 + 5). Null for a classic single-category shipment.
+    # products: [{product_id, name, quantity_kg}] -- all mutually compatible (Model 5 + policy),
+    # checked at creation. recommended_setpoint_c / setpoint_band: Model 4's setpoint for the mix
+    # (guarded by the physics optimizer). product_shelf_life: per-product shelf-life consumption,
+    # refreshed on every /ingest batch alongside the shipment-level Model 3 numbers.
+    products: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    recommended_setpoint_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    setpoint_band: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    setpoint_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    product_shelf_life: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     truck: Mapped[Truck] = relationship(back_populates="shipments")
     readings: Mapped[list["SensorReading"]] = relationship(back_populates="shipment", order_by="SensorReading.ts")

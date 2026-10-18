@@ -3,9 +3,25 @@
 // pulled from a module-level singleton so this stays usable from both client components and
 // (if ever needed) server code without relying on browser globals at import time.
 
-import type { Alert, AlertType, CategoryInfo, ComplianceReport, FleetAnalytics, FleetShipment, PlanRequest, PlanResponse, Product, SensorReading, Shipment, Truck } from "./types";
+import type { AiStatus, Alert, AlertType, CategoryInfo, ComplianceReport, FleetAnalytics, FleetShipment, LlmTestResult, PlanRequest, PlanResponse, Product, SensorReading, Shipment, Truck } from "./types";
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+// The admin backend runs on the same machine that serves this panel (start_frostmind.py), on
+// port 8001 (plain HTTP). NEXT_PUBLIC_API_BASE can pin it, but a "localhost" value only works
+// when the panel itself is opened via localhost -- opened from a phone/another laptop as
+// http://<LAN-IP>:3000, "localhost" would mean THAT device. So in the browser, follow the page's
+// own host instead. No IP is ever baked in.
+function resolveApiBase(): string {
+  const configured = process.env.NEXT_PUBLIC_API_BASE;
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    const pageIsLocal = host === "localhost" || host === "127.0.0.1";
+    const configuredIsLocal = !!configured && (configured.includes("//localhost") || configured.includes("//127.0.0.1"));
+    if (!configured || (!pageIsLocal && configuredIsLocal)) return `http://${host}:8001`;
+  }
+  return configured || "http://localhost:8001";
+}
+
+export const API_BASE = resolveApiBase();
 
 export class ApiError extends Error {
   status: number;
@@ -170,4 +186,14 @@ export async function fetchTrucks(token: string): Promise<Truck[]> {
 
 export async function planLoad(token: string, body: PlanRequest): Promise<PlanResponse> {
   return request("/planner/plan", token, { method: "POST", body: JSON.stringify(body) });
+}
+
+// AI status page: every AI component's live status, measured scores and usage counts (public),
+// plus a one-click LLM round-trip test (admin JWT).
+export async function fetchAiStatus(token: string | null = null): Promise<AiStatus> {
+  return request("/ai/status", token);
+}
+
+export async function testLlm(token: string): Promise<LlmTestResult> {
+  return request("/ai/llm/test", token, { method: "POST" });
 }

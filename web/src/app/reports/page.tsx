@@ -120,7 +120,7 @@ export default function ReportsPage() {
         eyebrow="Compliance"
         title="Reports"
         description="Per-shipment audit trail (temp/humidity/door history + alerts + category) as a downloadable CSV -- compliance evidence for cold-chain audits."
-        page={[4, 4]}
+        page={[4, 6]}
       />
       <PageBody>
         <ReportsList />

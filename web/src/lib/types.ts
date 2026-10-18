@@ -43,6 +43,12 @@ export interface Shipment {
   // "using category default".
   alert_rate_threshold_override?: number | null;
   alert_deviation_threshold_override?: number | null;
+  // Mixed load (Load Planner, Models 4 + 5) -- null/absent for a single-category shipment.
+  products?: { product_id: string; name: string; quantity_kg: number }[] | null;
+  recommended_setpoint_c?: number | null;
+  setpoint_band?: number[] | null;
+  setpoint_method?: string | null;
+  product_shelf_life?: { product_id: string; name: string; quantity_kg: number | null; consumed_fraction: number; remaining_hours: number | null }[] | null;
 }
 
 export interface FleetShipment extends Shipment {
@@ -205,4 +211,30 @@ export interface PlanResponse {
   groups: PlanGroup[];
   pairs: PlanPair[];
   warnings: string[];
+}
+
+// ---------- AI status (GET /ai/status, POST /ai/llm/test) ----------
+
+export interface AiComponent {
+  key: string;
+  name: string;
+  kind: string;
+  status: string; // "live" | "inactive" | "physics-only" | "rules-only" | "unavailable"
+  what: string;
+  where: string;
+  note?: string | null;
+  metrics: Record<string, number | string | null>;
+  usage: Record<string, number>;
+}
+
+export interface AiStatus {
+  components: AiComponent[];
+  llm: { reachable: boolean; model: string | null; configured_model: string; installed_models?: string[]; error?: string };
+}
+
+export interface LlmTestResult {
+  ok: boolean;
+  model: string | null;
+  latency_ms: number;
+  reply: string | null;
 }

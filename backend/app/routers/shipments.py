@@ -9,19 +9,24 @@ import io
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.auth import CurrentUser
 from app.database import get_db
 from app.models import Alert, Device, SensorReading, Shipment, ShipmentStatus, Truck
-from app.llm_orchestrator import generate_compliance_report
+from app import load_planner
+from app.llm_orchestrator import generate_compliance_report, llm_status
+from app.ml import MODEL1_ACTIVE
+from app.models import ProductCategory
 from app.schemas import (
     AlertOut,
     ComplianceReportOut,
     FleetShipmentOut,
+    LiveShipmentOut,
     SensorReadingOut,
+    ShipmentCreatedOut,
     ShipmentCreateRequest,
     ShipmentOut,
     ShipmentUpdateRequest,
@@ -30,23 +35,96 @@ from app.schemas import (
 router = APIRouter(prefix="/shipments", tags=["shipments"])
 
 
-@router.post("", response_model=ShipmentOut, status_code=201)
+@router.post("", response_model=ShipmentCreatedOut, status_code=201)
 def create_shipment(body: ShipmentCreateRequest, db: Annotated[Session, Depends(get_db)]):
     truck = db.get(Truck, body.truck_id)
     if truck is None:
         raise HTTPException(status_code=404, detail="Truck not found")
 
+    mixed = None
+    if body.products:
+        # Mixed load: Model 5 + policy vetoes must agree everything fits in ONE compartment, and
+        # Model 4 picks the setpoint (using this truck's own measured temperature wobble).
+        from app.routers.planner import _truck_sigma
+
+        try:
+            mixed = load_planner.plan_for_shipment(
+                [(p.product_id, p.quantity_kg) for p in body.products], _truck_sigma(db, truck.id)
+            )
+        except load_planner.UnknownProductError as exc:
+            raise HTTPException(status_code=422, detail=f"Unknown product_id: {exc.args[0]}")
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=exc.args[0])
+
     shipment = Shipment(
         truck_id=body.truck_id,
-        category=body.category,
+        category=ProductCategory(mixed["category"]) if mixed else body.category,
         status=body.status,
         label=body.label,
         start_time=datetime.now(timezone.utc) if body.status == ShipmentStatus.in_transit else None,
+        products=mixed["products"] if mixed else None,
+        recommended_setpoint_c=mixed["recommended_setpoint_c"] if mixed else None,
+        setpoint_band=mixed["setpoint_band"] if mixed else None,
+        setpoint_method=mixed["setpoint_method"] if mixed else None,
     )
     db.add(shipment)
     db.commit()
     db.refresh(shipment)
-    return shipment
+    out = ShipmentCreatedOut.model_validate(shipment)
+    if mixed:
+        out.device_category = mixed["device_category"]
+        out.device_category_within_1c = mixed["device_category_within_1c"]
+    else:
+        out.device_category = shipment.category.value
+        out.device_category_within_1c = True
+    return out
+
+
+def ai_summary() -> dict:
+    """Which AI components are live right now -- shown on the phone dashboard and admin panel."""
+    llm = llm_status(live=False)
+    return {
+        "model0_device_rule": "live on the ESP32",
+        "model1_anomaly": "active" if MODEL1_ACTIVE else "inactive (needs FROSTMIND's own labelled logs)",
+        "model3_shelf_life": "active",
+        "model4_setpoint": "active" if load_planner.MODEL4_ACTIVE else "physics-only",
+        "model5_compatibility": "active" if load_planner.MODEL5_ACTIVE else "rules-only",
+        "llm": f"active ({llm['model']})" if llm.get("model") else "unknown until the first explanation is requested",
+    }
+
+
+@router.get("/{shipment_id}/live", response_model=LiveShipmentOut)
+def get_shipment_live(
+    shipment_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    x_device_key: Annotated[str | None, Header(alias="X-Device-Key")] = None,
+):
+    """Phone dashboard feed. The phone has no admin login, so this is authorised with the same
+    device-scoped X-Device-Key it already uses for /ingest: only the device fitted to this
+    shipment's truck can read it. Returns the shipment (incl. Model 3 + per-product shelf life,
+    Model 4 setpoint), its latest reading, the last few alerts WITH their LLM explanations, and
+    which AI components are live."""
+    shipment = db.get(Shipment, shipment_id)
+    if shipment is None:
+        raise HTTPException(status_code=404, detail="Shipment not found")
+    device = shipment.truck.device if shipment.truck else None
+    if device is None or not x_device_key or x_device_key != device.provisioning_key:
+        raise HTTPException(status_code=401, detail="Missing or invalid X-Device-Key header")
+    latest = (
+        db.query(SensorReading)
+        .filter(SensorReading.shipment_id == shipment_id)
+        .order_by(SensorReading.ts.desc())
+        .first()
+    )
+    alerts = (
+        db.query(Alert).filter(Alert.shipment_id == shipment_id).order_by(Alert.ts.desc()).limit(5).all()
+    )
+    return {
+        "shipment": shipment,
+        "latest_reading": latest,
+        "alerts": alerts,
+        "ai": ai_summary(),
+    }
 
 
 @router.get("", response_model=list[FleetShipmentOut])

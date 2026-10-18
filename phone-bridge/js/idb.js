@@ -78,3 +78,15 @@ export async function queueLength() {
     req.onerror = () => reject(req.error);
   });
 }
+
+/** Empties the queue -- called when a shipment ends (or the wizard is reset) so readings that
+ * never synced aren't later uploaded under the NEXT shipment's id. */
+export async function clearQueue() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    tx.objectStore(STORE_NAME).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}

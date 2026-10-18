@@ -15,6 +15,8 @@ scipy>=1.13
 pandas>=2.0
 joblib>=1.5
 scikit-learn>=1.9
+# start_frostmind.py: generates the self-signed HTTPS cert for whatever machine it runs on
+cryptography>=42
 
 # Only actually imported at runtime if models/model1_isolation_forest_frostmind.pkl exists on
 # disk (app/ml.py's import-time check) -- not required for the app to boot/serve/test today,

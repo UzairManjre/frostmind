@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models import AlertSeverity, AlertType, PairingState, ProductCategory, ShipmentStatus
 
@@ -106,11 +106,26 @@ class TruckOut(BaseModel):
 # ---------- Shipment ----------
 
 
+class ShipmentProductIn(BaseModel):
+    product_id: str
+    quantity_kg: float = Field(default=1.0, gt=0)
+
+
 class ShipmentCreateRequest(BaseModel):
     truck_id: str
-    category: ProductCategory
+    # Either a single classic category, or a mixed load of catalog products (Load Planner). With
+    # products, the backend checks they can share one compartment (Model 5 + policy), stores
+    # Model 4's recommended setpoint, and derives `category` from the heaviest product.
+    category: ProductCategory | None = None
+    products: list[ShipmentProductIn] | None = Field(default=None, max_length=40)
     label: str | None = None
     status: ShipmentStatus = ShipmentStatus.pending
+
+    @model_validator(mode="after")
+    def _category_or_products(self):
+        if self.category is None and not self.products:
+            raise ValueError("Give either a category or a non-empty list of products.")
+        return self
 
 
 class ShipmentUpdateRequest(BaseModel):
@@ -139,6 +154,19 @@ class ShipmentOut(BaseModel):
     shelf_life_updated_at: datetime | None
     alert_rate_threshold_override: float | None
     alert_deviation_threshold_override: float | None
+    # Mixed load (null for a single-category shipment)
+    products: list[dict] | None = None
+    recommended_setpoint_c: float | None = None
+    setpoint_band: list[float] | None = None
+    setpoint_method: str | None = None
+    product_shelf_life: list[dict] | None = None
+
+
+class ShipmentCreatedOut(ShipmentOut):
+    # Only on POST /shipments: what the phone should tell the ESP (set_category), and whether
+    # that preset is actually close to the recommended setpoint.
+    device_category: str | None = None
+    device_category_within_1c: bool | None = None
 
 
 class FleetShipmentOut(ShipmentOut):
@@ -341,3 +369,20 @@ class PlanResponse(BaseModel):
     groups: list[PlanGroupOut]
     pairs: list[PlanPairOut]
     warnings: list[str]
+
+
+# ---------- Phone live view (device-key auth) ----------
+
+
+class LiveReadingOut(BaseModel):
+    ts: datetime
+    temp_c: float
+    humidity: float | None
+    door_open: bool | None
+
+
+class LiveShipmentOut(BaseModel):
+    shipment: ShipmentOut
+    latest_reading: LiveReadingOut | None
+    alerts: list[AlertOut]
+    ai: dict

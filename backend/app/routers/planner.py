@@ -1,7 +1,8 @@
 """Load Planner endpoints -- where Models 4 and 5 are used in FROSTMIND.
 
 GET  /products       the cleaned product catalog (public, like /categories -- reference data).
-POST /planner/plan   admin-JWT protected like the other admin endpoints. Given the products (and
+POST /planner/plan   public (a pure calculation over the public catalog -- the phone app has no
+                     admin login and needs it in its setup wizard). Given the products (and
                      quantities) a dispatcher wants to ship, returns:
                        * every pair's compatibility (Model 5 probability + policy vetoes +
                          feasibility, with plain-English reasons),
@@ -22,7 +23,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import load_planner
-from app.auth import CurrentUser
 from app.config import PLANNER_MIN_READINGS_FOR_SIGMA
 from app.database import get_db
 from app.models import SensorReading, Shipment, Truck
@@ -51,7 +51,7 @@ def _truck_sigma(db: Session, truck_id: str) -> float | None:
 
 
 @router.post("/planner/plan", response_model=PlanResponse)
-def plan(body: PlanRequest, current_user: CurrentUser, db: Annotated[Session, Depends(get_db)]):
+def plan(body: PlanRequest, db: Annotated[Session, Depends(get_db)]):
     sigma, source = None, "default (real milk-transport data)"
     if body.sigma_c is not None:
         sigma, source = body.sigma_c, "request"

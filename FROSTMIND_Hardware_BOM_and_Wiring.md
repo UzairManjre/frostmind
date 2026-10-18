@@ -26,22 +26,22 @@ Fixed by the firmware — these are the actual constants in `firmware/frostmind_
 |---|---|---|
 | 3V3 | power | DHT VCC |
 | GND | ground | DHT GND, reed switch, IR LED return |
-| GPIO8 | single-wire digital | DHT DATA |
-| GPIO4 | digital in, `INPUT_PULLUP` | reed switch (other leg -> GND) |
+| GPIO7 | single-wire digital | DHT DATA (moved from GPIO8 to match the rebuilt board) |
+| GPIO5 | digital in, `INPUT_PULLUP` | reed switch (other leg -> GND) -- moved from GPIO4 to match the rebuilt board |
 | GPIO6 | digital out | resistor -> IR LED anode |
-| GPIO5 | reserved, unused | nothing — see note below |
-| GPIO9 | free, unused | was I2C SCL back when this assumed an SHT31-D |
+| GPIO4 | free, unused | the original reed-switch pin |
+| GPIO8, GPIO9 | free, unused | GPIO8 was the original DHT pin; GPIO9 was I2C SCL back when this assumed an SHT31-D |
 
-**GPIO5 is deliberately unwired.** It's reserved for a TSOP38238 IR receiver, which this build does not have. This project is not using IRDB, LIRC, or any IR receiver — not deferred, ruled out. See `FROSTMIND_Phase2_Implementation_Plan.md` §3 and the MVP plan's §5 for what that means for AC pairing.
+**There is no IR receiver in this build** (GPIO5, once reserved for a TSOP38238, now carries the reed switch). This project is not using IRDB, LIRC, or any IR receiver — not deferred, ruled out. See `FROSTMIND_Phase2_Implementation_Plan.md` §3 and the MVP plan's §5 for what that means for AC pairing.
 
 **Sensor note:** earlier drafts of this project assumed an I2C SHT31-D (4 pins). The actual sensor on hand has 3 pins (VCC/GND/DATA) — that's a DHT11 or DHT22/AM2302, single-wire, not I2C. Check the part markings and set `FROSTMIND_DHT_TYPE` near the top of `firmware/frostmind_main/frostmind_main.ino` to match (`DHT11` or `DHT22`) — everything else in the firmware is identical either way. If it's a bare sensor rather than a breakout module, add a 10k ohm pull-up resistor from DATA to VCC; most 3-pin breakout modules already have this built in.
 
 ## 3. Wiring, in words
 
-- **DHT11/DHT22:** VCC->3V3, GND->GND, DATA->GPIO8. Only 3 wires — there's no SDA/SCL to mix up.
-- **Reed switch:** one leg->GPIO4, other leg->GND. No external resistor — the firmware enables the internal pull-up (`INPUT_PULLUP`), and **HIGH means the door is open** (magnet away → switch open → pin pulled up). This was corrected after real-hardware testing; see `loop()` in the `.ino`.
+- **DHT11/DHT22:** VCC->3V3, GND->GND, DATA->GPIO7. Only 3 wires — there's no SDA/SCL to mix up.
+- **Reed switch:** one leg->GPIO5, other leg->GND. No external resistor — the firmware enables the internal pull-up (`INPUT_PULLUP`), and **HIGH means the door is open** (magnet away → switch open → pin pulled up). This was corrected after real-hardware testing; see `loop()` in the `.ino`.
 - **IR LED:** GPIO6 -> resistor (100-220 ohm) -> LED anode (longer leg) -> cathode -> GND. Aim broadly at the AC's front panel; a meter or two away is fine for direct-drive.
-- **GPIO5:** leave unconnected.
+- **GPIO2, GPIO4, GPIO8:** leave unconnected (in particular, no wire from GPIO2 to 3V3).
 - **Power:** USB-C from whichever machine you're flashing from.
 
 (The published artifact has an actual wiring diagram if you want the visual instead of the text version above.)

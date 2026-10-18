@@ -1,10 +1,8 @@
 // Live dashboard shown once the wizard completes (shipment is in-transit). Shows the BLE
-// connection state, the last streamed reading, the pending-sync queue length, and whatever the
-// most recent /ingest response reported (device-threshold-rule anomaly count -- see
-// backend/README.md "Model 1 status", ML scoring isn't wired up yet -- plus Model 3 shelf-life).
-// No admin JWT is available on this device (the wizard has no login step), so this only shows
-// what the unauthenticated endpoints this app already calls -- BLE readings and /ingest
-// responses -- naturally surface, not the full admin alerts feed.
+// connection state, the last streamed reading, the pending-sync queue length, and an AI panel
+// fed by GET /shipments/{id}/live (authorised with the device's X-Device-Key, since the phone
+// has no admin login): Model 4's recommended setpoint, Model 3 shelf life per product, the latest
+// alerts with their LLM explanations, and which AI components are live.
 //
 // Also starts phone-side GPS capture (js/geo.js) the moment this renders -- Prototype-to-
 // Production plan §5's correction: use the phone's own Geolocation API rather than new ESP32
@@ -13,6 +11,7 @@
 
 import { api } from "./api.js";
 import { STORAGE_KEYS, saveJSON } from "./config.js";
+import { clearQueue } from "./idb.js";
 import { getLastErrorMessage, getLastPosition, getStatus, startWatching, stopWatching } from "./geo.js";
 import { isWakeLockSupported, releaseWakeLock, requestWakeLock } from "./wakelock.js";
 
@@ -26,11 +25,15 @@ export function renderDashboard(ctx) {
   const node = el(`
     <section class="card">
       <div class="step-header">
-        <span class="step-badge">Live shipment <span class="idx">(06) / 06</span></span>
+        <span class="step-badge">Live shipment <span class="idx">(live)</span></span>
         <h2>${ctx.shipment?.label || ctx.shipment?.id || "shipment"}</h2>
       </div>
       <p class="meta"><span>Truck <strong>${ctx.truck?.label || "-"}</strong></span>
-      <span>Category <strong>${ctx.shipment?.category || "-"}</strong></span></p>
+      ${
+        ctx.shipment?.products?.length
+          ? `<span>Load <strong>${ctx.shipment.products.map((p) => p.name).join(", ")}</strong></span>`
+          : `<span>Category <strong>${ctx.shipment?.category || "-"}</strong></span>`
+      }</p>
 
       <div class="grid">
         <div class="tile highlight"><span class="tile-label">Temperature</span><span class="tile-value" id="live-temp">-</span></div>
@@ -51,6 +54,18 @@ export function renderDashboard(ctx) {
       </p>
 
       <p class="status" id="sync-status"></p>
+
+      <div class="ai-panel">
+        <div class="ai-head"><span class="ai-eyebrow">AI · live</span><span class="ai-updated" id="ai-updated">loading...</span></div>
+        <div class="grid">
+          <div class="tile"><span class="tile-label">Recommended setpoint (Model 4)</span><span class="tile-value" id="ai-setpoint">-</span></div>
+          <div class="tile"><span class="tile-label">Actual vs setpoint</span><span class="tile-value" id="ai-delta">-</span></div>
+        </div>
+        <div id="ai-products"></div>
+        <p class="cart-title">Latest alerts · AI explanation</p>
+        <div id="ai-alerts"></div>
+        <div class="chip-row" id="ai-status"></div>
+      </div>
 
       <button id="reconnect-btn" class="secondary">Reconnect Bluetooth</button>
       <button id="end-shipment-btn" class="danger">Mark delivered / end shipment</button>
@@ -225,6 +240,101 @@ export function renderDashboard(ctx) {
     });
   }
 
+
+  // ---------- AI panel: GET /shipments/{id}/live (device-key auth) every 10 s ----------
+  // Everything the AI layer produces for this shipment, on the phone: Model 4's recommended
+  // setpoint vs the actual temperature, Model 3 shelf life (per product for a mixed load), the
+  // latest alerts WITH the LLM's assessment + recommended action, and which models are live.
+  const ESC_MAP = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ESC_MAP[c]);
+  const aiSetpointEl = node.querySelector("#ai-setpoint");
+  const aiDeltaEl = node.querySelector("#ai-delta");
+  const aiProductsEl = node.querySelector("#ai-products");
+  const aiAlertsEl = node.querySelector("#ai-alerts");
+  const aiStatusEl = node.querySelector("#ai-status");
+  const aiUpdatedEl = node.querySelector("#ai-updated");
+
+  function hoursText(h) {
+    if (h == null) return "";
+    return h >= 48 ? `${(h / 24).toFixed(1)} days left` : `${h.toFixed(1)} h left`;
+  }
+
+  function renderLive(live) {
+    const s = live.shipment;
+    const latest = live.latest_reading;
+    if (s.recommended_setpoint_c != null) {
+      aiSetpointEl.textContent = `${s.recommended_setpoint_c.toFixed(1)} °C`;
+      if (latest) {
+        const d = latest.temp_c - s.recommended_setpoint_c;
+        aiDeltaEl.textContent = `${d >= 0 ? "+" : ""}${d.toFixed(1)} °C`;
+        aiDeltaEl.classList.toggle("warn-text", Math.abs(d) > 3);
+      }
+    } else {
+      aiSetpointEl.textContent = "category preset";
+      aiDeltaEl.textContent = "-";
+    }
+    if (s.shelf_life_consumed_fraction != null) {
+      shelfLifeEl.textContent = `${(s.shelf_life_consumed_fraction * 100).toFixed(1)}%`;
+      shelfLifeEl.title = hoursText(s.shelf_life_remaining_hours);
+    }
+
+    const per = s.product_shelf_life || [];
+    if (per.length) {
+      aiProductsEl.innerHTML =
+        `<p class="cart-title">Shelf life per product (Model 3)</p>` +
+        per
+          .map((p) => {
+            const pct = Math.min(100, p.consumed_fraction * 100);
+            const cls = pct >= 100 ? "bad" : pct >= 80 ? "warn" : "";
+            return `<div class="sl-row"><span class="sl-name">${esc(p.name)}<small>${esc(hoursText(p.remaining_hours))}</small></span>
+              <span class="sl-bar"><span class="sl-fill ${cls}" style="width:${Math.max(2, pct)}%"></span></span>
+              <span class="sl-pct">${pct.toFixed(pct < 1 ? 2 : 1)}%</span></div>`;
+          })
+          .join("");
+    } else if (s.products && s.products.length) {
+      aiProductsEl.innerHTML = `<p class="hint">Per-product shelf life appears after the first readings sync.</p>`;
+    } else {
+      aiProductsEl.innerHTML = "";
+    }
+
+    if (!live.alerts.length) {
+      aiAlertsEl.innerHTML = `<p class="hint">No alerts on this shipment.</p>`;
+    } else {
+      aiAlertsEl.innerHTML = live.alerts
+        .map((a) => {
+          const when = new Date(a.ts).toLocaleTimeString();
+          const ageMin = (Date.now() - new Date(a.ts).getTime()) / 60000;
+          const ai = a.llm_assessment
+            ? `<p class="ai-text">${esc(a.llm_assessment)}</p><p class="ai-action"><b>Do:</b> ${esc(a.llm_recommended_action)}</p>`
+            : `<p class="hint">${ageMin < 3 ? "AI explanation being written..." : "Not explained -- the newest alert of each incident gets the AI explanation."}</p>`;
+          return `<div class="alert-item sev-${esc(a.severity)}"><div class="alert-top"><span>${esc(a.type)} · ${esc(a.severity)}</span><small>${when}</small></div>
+            <p class="alert-msg">${esc(a.message)}</p>${ai}</div>`;
+        })
+        .join("");
+    }
+
+    aiStatusEl.innerHTML = Object.entries(live.ai)
+      .map(([k, v]) => {
+        const label = k.replace(/_/g, " ").replace(/^model(\d)/, "Model $1");
+        const on = /^(active|live)/.test(v);
+        return `<span class="chip ${on ? "on" : "off"}" title="${esc(v)}">${esc(label)}</span>`;
+      })
+      .join("");
+    aiUpdatedEl.textContent = `updated ${new Date().toLocaleTimeString()}`;
+  }
+
+  async function refreshLive() {
+    if (!ctx.shipment?.id || !ctx.device?.provisioning_key) return;
+    try {
+      renderLive(await api.live(ctx.shipment.id, ctx.device.provisioning_key));
+    } catch (err) {
+      aiUpdatedEl.textContent = `AI feed unavailable: ${err.status || ""} ${err.message.slice(0, 80)}`;
+    }
+  }
+  refreshLive();
+  const liveTimer = setInterval(refreshLive, 10000);
+  ctx.cleanupHandlers.push(() => clearInterval(liveTimer));
+
   node.querySelector("#reconnect-btn").addEventListener("click", async () => {
     errorEl.textContent = "";
     try {
@@ -251,6 +361,7 @@ export function renderDashboard(ctx) {
       saveJSON(STORAGE_KEYS.TRUCK, null);
       saveJSON(STORAGE_KEYS.SHIPMENT, null);
       saveJSON(STORAGE_KEYS.WIZARD_STEP, null);
+      await clearQueue().catch(() => {}); // don't upload this trip's leftovers under the next shipment
       window.location.reload();
     } catch (err) {
       errorEl.textContent = `Could not end shipment: ${err.message}`;

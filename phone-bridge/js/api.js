@@ -17,11 +17,17 @@ async function request(path, options = {}) {
     let detail = res.statusText;
     try {
       const body = await res.json();
-      detail = body.detail || JSON.stringify(body);
+      detail = body.detail ?? JSON.stringify(body);
     } catch (_err) {
       // response wasn't JSON -- fall back to statusText
     }
-    throw new Error(`${options.method || "GET"} ${path} failed: ${res.status} ${detail}`);
+    // Structured details (e.g. the Load Planner's "these can't share a compartment" groups) are
+    // kept on the error so screens can render them properly instead of "[object Object]".
+    const text = typeof detail === "string" ? detail : detail?.message || JSON.stringify(detail);
+    const err = new Error(`${options.method || "GET"} ${path} failed: ${res.status} ${text}`);
+    err.status = res.status;
+    err.detail = detail;
+    throw err;
   }
   const contentType = res.headers.get("content-type") || "";
   if (contentType.includes("application/json")) {
@@ -51,6 +57,27 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ truck_id: truckId, category, label, status: "pending" }),
     }),
+
+  // Mixed load: the backend checks the products can share one compartment (Model 5 + policy)
+  // and stores Model 4's recommended setpoint; a 422 carries the planner's grouping.
+  createMixedShipment: (truckId, products, label) =>
+    request("/shipments", {
+      method: "POST",
+      body: JSON.stringify({ truck_id: truckId, products, label, status: "pending" }),
+    }),
+
+  // Load Planner (Models 4 + 5): public catalog + plan calculation.
+  products: () => request("/products"),
+  plan: (products, truckId) =>
+    request("/planner/plan", {
+      method: "POST",
+      body: JSON.stringify({ products, truck_id: truckId || null }),
+    }),
+
+  // Live dashboard feed: shelf life (per product), recommended setpoint, latest alerts with
+  // their LLM explanations, AI status. Authorised with the device's X-Device-Key.
+  live: (shipmentId, deviceKey) =>
+    request(`/shipments/${shipmentId}/live`, { headers: deviceKey ? { "X-Device-Key": deviceKey } : {} }),
 
   updateShipmentStatus: (shipmentId, status) =>
     request(`/shipments/${shipmentId}`, {

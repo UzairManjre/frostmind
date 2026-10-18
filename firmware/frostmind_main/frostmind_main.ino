@@ -45,7 +45,9 @@
 #include <DHT.h>
 #include <Preferences.h>
 #include <IRac.h>
+#include <IRsend.h>
 #include <IRutils.h>
+#include "driver/gpio.h"
 #include <ArduinoJson.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
@@ -58,10 +60,10 @@
 // ===========================================================================
 // Pin assignments (fixed by the hardware plan -- not tuning constants)
 // ===========================================================================
-static const uint8_t PIN_DHT = 8;     // DHT11/DHT22 single-wire DATA pin
-static const uint8_t PIN_REED = 4;    // INPUT_PULLUP, HIGH = door open (see loop())
+static const uint8_t PIN_DHT = 7;     // DHT11/DHT22 single-wire DATA pin (moved from GPIO8: matches the rewired board, confirmed by a pin scan)
+static const uint8_t PIN_REED = 5;    // INPUT_PULLUP, HIGH = door open (see loop()) -- moved from GPIO4 to match the rebuilt board
 static const uint16_t PIN_IR_LED = 6;
-// GPIO5 intentionally unused -- reserved for a TSOP38238 if one gets sourced.
+// GPIO4 and GPIO8 are free (the original reed / DHT pins before the board was rebuilt).
 // GPIO9 is free -- it was SCL back when this used an I2C SHT31-D.
 
 // ===========================================================================
@@ -892,6 +894,27 @@ void printMenu() {
   Serial.println("+/- = temp up/down   | f = cycle fan speed                   | p = power toggle");
   Serial.println("a = start automatic pairing sweep");
   Serial.println("(+, -, f, p all resend using the currently selected/paired protocol)");
+  Serial.println("x = IR LED test (3 s flashing, view through a phone camera)");
+}
+
+// Wiring check for the IR LED: 38 kHz carrier switched on/off at 2 Hz, so it shows as a clear
+// flicker through a phone camera (IR is invisible to the eye). Blocks for `seconds` -- it's a
+// bench test, not something the alert path ever calls.
+void irLedTest(uint16_t pin, int seconds, bool weakDrive) {
+  IRsend tester(pin);
+  tester.begin();
+  if (weakDrive) {
+    // weakest pad drive (~5 mA): safe even if this pin turns out to be wired straight to GND
+    gpio_set_drive_capability((gpio_num_t)pin, GPIO_DRIVE_CAP_0);
+  }
+  tester.enableIROut(38);
+  Serial.printf(">>> IR LED TEST: GPIO%u flashing for %d s -- look through a phone camera <<<\n", pin, seconds);
+  for (int half = 0; half < seconds * 2; half++) {
+    for (int k = 0; k < 5; k++) tester.mark(50000);  // 250 ms of carrier (mark() takes <= 65535 us)
+    tester.space(250000);                            // 250 ms off
+  }
+  if (weakDrive) gpio_set_drive_capability((gpio_num_t)pin, GPIO_DRIVE_CAP_DEFAULT);
+  Serial.printf(">>> IR LED TEST: GPIO%u done <<<\n", pin);
 }
 
 String serialInputBuf = "";
@@ -951,6 +974,9 @@ void handleSerialInput() {
         break;
       case 'a':
         startAutoPairing();
+        break;
+      case 'x':
+        irLedTest(PIN_IR_LED, 3, false);
         break;
       default:
         break;

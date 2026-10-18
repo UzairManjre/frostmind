@@ -16,11 +16,11 @@ algorithm) / §6 Phase A for the design this implements.
 
 | Signal | ESP32-S3 pin | Notes |
 |---|---|---|
-| DHT11/DHT22 DATA | GPIO8 | single-wire, `FROSTMIND_DHT_TYPE` selects which |
-| MC-38 reed switch | GPIO4 | `INPUT_PULLUP`, **HIGH = door open** (corrected after real-hardware testing showed the original LOW=open assumption was backwards -- see `loop()`'s comment in the .ino) |
+| DHT11/DHT22 DATA | GPIO7 | single-wire, `FROSTMIND_DHT_TYPE` selects which (moved from GPIO8 to match the rebuilt board) |
+| MC-38 reed switch | GPIO5 (moved from GPIO4 to match the rebuilt board) | `INPUT_PULLUP`, **HIGH = door open** (corrected after real-hardware testing showed the original LOW=open assumption was backwards -- see `loop()`'s comment in the .ino) |
 | IR transmitter (LED driver) | GPIO6 | transmit-only, no IR receiver in this build |
-| (reserved) | GPIO5 | unused — for a TSOP38238 if one gets sourced later |
-| (free) | GPIO9 | was SCL back when this used an I2C SHT31-D; unused now |
+| (free) | GPIO4 | the original reed-switch pin; unused now |
+| (free) | GPIO8, GPIO9 | GPIO8 was the original DHT pin; GPIO9 was SCL back when this used an I2C SHT31-D |
 
 The sensor actually on hand has 3 pins (VCC/GND/DATA), which is a
 DHT11/DHT22/AM2302, not the I2C SHT31-D earlier drafts of this project
@@ -227,6 +227,9 @@ rule; the authoritative Arrhenius shelf-life math lives in
 If no category has been set, `DEFAULT_SETPOINT_C` (4.0°C) is used.
 
 ## Serial command set (manual-fallback pairing flow)
+
+Bench-test keys: `x` = IR LED test (3 s flashing, view through a phone's front camera). Live console with these keys: `.venv\Scripts\python.exe scripts\esp_console.py`.
+
 
 Same key bindings as `frostmind_brand_select_ir.ino`, adapted into this
 sketch and kept in sync with the BLE manual-pairing commands (both operate

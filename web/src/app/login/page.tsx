@@ -108,7 +108,7 @@ export default function LoginPage() {
             <span className="font-semibold tracking-wider">FROSTMIND</span>
             <span className="ml-3">Cold-chain AIoT monitoring</span>
           </span>
-          <span className="font-mono">API: {API_BASE}</span>
+          <span className="font-mono" suppressHydrationWarning>API: {API_BASE}</span>
         </footer>
       </div>
     </div>

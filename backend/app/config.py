@@ -87,3 +87,6 @@ MODEL5_METRICS_PATH = MODELS_DIR / "model5_compatibility_metrics.json"
 MODEL4_MAX_DISAGREEMENT_C = 0.5
 # Minimum in-transit readings before a truck's own temperature std is trusted as its sigma.
 PLANNER_MIN_READINGS_FOR_SIGMA = 30
+# Mixed loads: flag a reading as anomalous when it's this far from Model 4's recommended setpoint
+# (same 3 C margin the ESP32's own deviation rule uses).
+MIXED_LOAD_DEVIATION_C = 3.0

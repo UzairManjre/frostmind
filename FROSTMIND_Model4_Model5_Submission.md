@@ -13,8 +13,9 @@ The professor asked for two models:
 
 Both are **built, trained, evaluated, and live** in FROSTMIND:
 - the backend endpoint `POST /planner/plan`;
-- a new **Load Planner** page in the admin web panel;
-- 64 passing backend tests.
+- the driver's **phone app** (multi-product setup step and an AI panel on the live dashboard);
+- the admin panel's **Load Planner** and **AI Models** pages;
+- 72 passing backend tests.
 
 The table below gives the headline numbers. Every number was measured on **products the model never saw during training**.
 
@@ -352,80 +353,106 @@ How to read the table:
 
 ## 8. Where the models are used in FROSTMIND
 
-### 8.1 Backend
+Models 4 and 5 are part of the normal workflow, not a side tool:
 
-`backend/app/load_planner.py` loads both `.pkl` files at startup. It follows the same graceful pattern as Model 1: if a file is missing, the planner falls back to physics and rules instead of crashing, and `/health` reports `model4_status` and `model5_status`.
+1. The driver's phone app plans the load with them.
+2. The backend refuses unsafe mixes and stores the recommended setpoint on the shipment.
+3. Every later reading is checked against that setpoint.
+4. Shelf life is tracked per product.
+5. The AI explanations reach both the phone and the admin panel.
 
-- `GET /products` returns the 155-product catalog (public reference data, like `/categories`).
-- `POST /planner/plan` (admin JWT) runs these steps:
-  1. **Model 5** scores every pair (probability + policy vetoes + Model 4 feasibility), with plain-English reasons.
-  2. **DSatur** splits the order into compatible compartments.
-  3. **Model 4** recommends each compartment's setpoint, guarded by the physics teacher. It also names the nearest of the six FROSTMIND device categories, which the ESP32 already applies over BLE `set_category`, and warns when no category is within 1 °C (e.g. bananas at 13.5 °C must be set manually).
-- **σ** comes from the request, or from the truck's own last 500 readings (at least 30 needed), or from the real-data default.
+### 8.1 End-to-end flow (a real run)
 
-Example request:
+| Step | Where | What the AI does |
+|---|---|---|
+| 1 | Phone app, setup step 3, "What are you shipping?" | The driver adds products and kilograms (search or presets). **Check load (AI)** calls the Load Planner. |
+| 2 | `POST /planner/plan` | **Model 5** scores every pair (with reasons), **DSatur** groups compatible products into compartments, and **Model 4** gives each compartment's setpoint. |
+| 3 | Phone app | Shows the compartments, setpoints and why items were separated. The driver taps **Create shipment** for the compartment this truck carries. |
+| 4 | `POST /shipments` with `products` | The server checks the mix again: an incompatible mix gets a 422 listing its groups and clashes. It stores the products, Model 4's setpoint, the near-optimal band and the method. The phone sends the nearest device preset to the ESP over BLE `set_category`. |
+| 5 | `POST /ingest`, every batch | **Model 3** shelf life is computed **per product**, and the most perishable product drives the shipment-level number and its alerts. A reading more than 3 °C from **Model 4's setpoint** is flagged. Each new incident gets a **local LLM** explanation, newest first. |
+| 6 | Phone dashboard, `GET /shipments/{id}/live` (device-key auth) | The AI panel shows the recommended setpoint against the actual temperature, shelf life per product, the latest alerts with the LLM's assessment and "Do:" action, and which models are live. |
+| 7 | Admin panel | **Shipment page:** "Mixed load · AI plan" panel. **Alerts page:** AI analysis. **AI Models page:** live status and scores of every component, plus a one-click LLM test. |
 
-```
-POST /planner/plan
-{"products": [{"product_id": "bananas_ripe", "quantity_kg": 200},
-              {"product_id": "lettuce", "quantity_kg": 150},
-              {"product_id": "apples", "quantity_kg": 300},
-              {"product_id": "vaccines_refrigerated", "quantity_kg": 20}]}
-```
+Verified on the running system (end-to-end script, local Ollama model `gemma-4-E4B-it`):
+- The planner split apples, pears, lettuce and bananas into 3 compartments.
+- An apples + bananas shipment was **rejected (422)** with reasons.
+- An apples + pears shipment was created at **−0.9 °C (method: AI)**.
+- Warm readings were flagged against the setpoint, with per-product shelf life live.
+- The **AI explanation arrived 7 s after the alert**: *"…an excursion to 8.5C, substantially above the required −0.9C for fresh produce… potentially accelerated by the reported 'door open'… Do: immediately inspect the cargo area…"*
 
-Response, abridged from a live run:
+### 8.2 Backend endpoints
+
+`backend/app/load_planner.py` loads both `.pkl` files at startup. If one is missing, it falls back to physics and rules; it never crashes.
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `GET /products` | public | The 155-product catalog |
+| `POST /planner/plan` | public (pure calculation; the phone has no admin login) | Compartments, setpoints and pairwise compatibility with reasons |
+| `POST /shipments` with `products` | open, like the rest of the setup wizard | Mixed-load shipment. Model 5 check (422 if the mix is unsafe), Model 4 setpoint stored |
+| `GET /shipments/{id}/live` | `X-Device-Key` of that truck's ESP | Phone AI feed: shipment, per-product shelf life, setpoint, latest alerts with LLM text, AI status |
+| `GET /ai/status` | public | Every AI component: status, measured scores (from `models/*_metrics.json`), where used, live usage counts |
+| `POST /ai/llm/test` | admin JWT | Real round trip to the local LLM: reply, model and latency |
+| `GET /health` | public | Adds `model4_status`, `model5_status` and `llm_status` |
+
+**LLM robustness:**
+- The backend asks Ollama which models are installed. It uses the configured model if present, otherwise the smallest installed instruction model.
+- Any failure falls back to "no explanation" and never blocks.
+- Only the newest alert of each type in a batch is explained, so a backlog doesn't queue minutes of LLM work.
+
+Example `POST /planner/plan` response (abridged, live run):
 
 ```
 sigma_c 0.306 (default, real milk-transport data)   model4_active true   model5_active true
-Compartment 1  bananas_ripe           13.51 C  method=ml  (physics check 13.55 C)  -> set manually (no device category near)
-Compartment 2  lettuce                 0.13 C  method=ml  (physics check 0.15 C)   -> seafood_fresh_chilled (0 C)
-Compartment 3  apples                 -0.81 C  method=ml  (physics check -0.85 C)  -> seafood_fresh_chilled (0 C)
-Compartment 4  vaccines_refrigerated   4.97 C  method=ml  (physics check 5.00 C)   -> vaccine_generic (5 C)
-bananas + lettuce   p=0.00  keep apart  "Ethylene: Bananas, ripe produces ethylene (medium) and Lettuce is sensitive."
-lettuce + apples    p=0.12  keep apart  "Ethylene: Apples produces ethylene (high) and Lettuce is sensitive."
-apples + vaccines   veto    "Medicines must be segregated from food (WHO TRS 961 Annex 9; EU GDP 2013/C 343/01)."
+Compartment 1  lettuce        0.13 C  method=ml  -> ESP preset seafood_fresh_chilled (0 C)
+Compartment 2  bananas_ripe  13.51 C  method=ml  -> no ESP preset near 13.5 C, set the reefer manually
+Compartment 3  apples+pears  -0.90 C  method=ml  -> ESP preset seafood_fresh_chilled (0 C)
+bananas + lettuce  p=0.00  keep apart  "Ethylene: Bananas, ripe produces ethylene (medium) and Lettuce is sensitive."
+apples + bananas   p=0.02  keep apart  "Temperature: Apples is stored at -1.1-4.4 C but Bananas, ripe needs 13.3-15.6 C (no overlap)."
 ```
 
-### 8.2 Admin panel: the Load Planner page
+### 8.3 Phone app
 
-The new page (`web/src/app/planner/page.tsx`, linked as **Load Planner** in the nav bar) lets a dispatcher:
-1. pick products (or a preset);
-2. enter kilograms;
-3. optionally choose the truck, so its own measured wobble is used.
+![Figure 11 – Phone app, setup step 3: products added, AI load check splits them into compartments with setpoints.](docs/figures/model4_5/ui_phone_step3.jpg)
 
-It then shows:
-- one card per compartment: setpoint, near-optimal band, safe range, ML vs physics value, device category, and each product's shelf-life use per day;
-- a clickable compatibility matrix with Model 5 probabilities;
-- the reason each pair was separated.
+![Figure 12 – Phone dashboard AI panel: Model 4 setpoint vs actual, per-product shelf life (Model 3), and the latest alert with the local LLM's assessment and recommended action.](docs/figures/model4_5/ui_phone_ai_panel.jpg)
 
-![Figure 11 – Load Planner: a mixed grocery order split into five compartments, each with its setpoint.](docs/figures/model4_5/ui_load_planner_groups.jpg)
+### 8.4 Admin panel
 
-![Figure 12 – Load Planner: compatibility matrix (numbers = Model 5 probability; red = regulatory veto) and the reasons for one selected pair.](docs/figures/model4_5/ui_load_planner_matrix.jpg)
+![Figure 13 – AI Models page: every component's live status, measured scores, where it is used and live usage; the LLM card has a one-click test.](docs/figures/model4_5/ui_ai_models.jpg)
 
-The full data flow is the architecture diagram in Section 4 (rendered as `docs/figures/model4_5/architecture.png`).
+![Figure 14 – Load Planner (admin): compartments with setpoints and a "Create shipment" control per compartment.](docs/figures/model4_5/ui_load_planner_groups.jpg)
 
-### 8.3 Tests
+![Figure 15 – Shipment page for a mixed load: Model 4 setpoint and Model 3 shelf life per product, above the live temperature chart with flagged readings.](docs/figures/model4_5/ui_shipment_mixed_load.jpg)
 
-**64 backend tests pass**: the 34 that existed before plus 30 new ones.
+The full data flow is the architecture diagram in Section 4 (`docs/figures/model4_5/architecture.png`).
 
-`backend/tests/test_products.py` covers:
-- the physics sanity targets: lettuce 0–2 °C; apples + pears about 0 °C; tropical fruit 12.5–14 °C; vaccines 5.0 °C at any σ; frozen + chilled infeasible;
-- the FDA limit as a chance constraint;
-- Q10 derived from Model 3;
-- feature symmetry and the label-leakage guard;
-- DSatur validity;
-- the student's shift-invariance.
+### 8.5 Tests
 
-`backend/tests/test_planner.py` covers:
-- authentication;
-- the catalog;
-- apples + pears grouped together; bananas + lettuce separated; vaccines vetoed from food; frozen separated from chilled;
-- setpoints inside their safe range;
-- the device-category warning;
-- σ fallback;
-- behaviour with no `.pkl` files.
+**72 backend tests pass**: 34 original tests plus 38 new ones.
+- `test_products.py`:
+  - physics sanity targets;
+  - FDA chance constraint;
+  - Q10 taken from Model 3;
+  - pair-feature symmetry;
+  - label-leakage guard;
+  - DSatur;
+  - shift-invariance of the student model.
+- `test_planner.py`:
+  - grouping;
+  - vetoes;
+  - safe ranges;
+  - device-preset warning;
+  - σ fallback;
+  - no-`.pkl` fallback.
+- `test_mixed_load.py`:
+  - a compatible mix becomes one shipment, and an incompatible mix gets a 422 with reasons;
+  - per-product shelf life and setpoint-drift alerts via `/ingest`;
+  - `/live` requires the truck's own device key;
+  - classic single-category shipments still work;
+  - `/ai/status` lists every component;
+  - the LLM test needs admin and reports failure honestly.
 
-The web app passes ESLint, TypeScript checking and `next build`.
+The web app passes ESLint, TypeScript checking and `next build`. The phone app's JavaScript passes `node --check`.
 
 ## 9. Limitations and honest caveats
 
@@ -435,6 +462,7 @@ The web app passes ESLint, TypeScript checking and `next build`.
 - **Some values are imputed** (39 freezing points, 33 shelf lives, 15 ethylene classes). All are flagged in `imputed_fields`. The non-produce freezing points are category-level assumptions.
 - **σ comes from milk transport**, not from FROSTMIND's own trucks. The planner switches to a truck's own σ once it has at least 30 readings.
 - **The device supports only six category setpoints.** The planner warns when a recommendation cannot be applied by the ESP32; arbitrary setpoints would need a firmware change.
+- **The LLM runs locally** (Ollama), so an explanation takes about 5–20 s and only the newest alert of each incident is explained; if Ollama is not running, alerts simply have no explanation (the AI Models page shows this).
 - **Not certified.** This is a university prototype. Pharmaceutical shipments must follow the product's labelled storage conditions.
 
 ## 10. How to reproduce
@@ -445,10 +473,15 @@ The web app passes ESLint, TypeScript checking and `next build`.
 .venv\Scripts\python.exe scripts\estimate_reefer_fluctuation.py
 .venv\Scripts\python.exe scripts\train_model5_compatibility.py
 .venv\Scripts\python.exe scripts\train_model4_mixed_setpoint.py
-cd backend ; ..\.venv\Scripts\python.exe -m pytest
-..\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8001
-cd ..\web ; npm run dev      # then open http://localhost:3000/planner
+cd backend ; ..\.venv\Scripts\python.exe -m pytest ; cd ..
+.venv\Scripts\python.exe start_frostmind.py     # backend + phone app + admin panel, any machine/network
 ```
+
+`start_frostmind.py` prints the addresses to open:
+- **Phone:** `https://<this-machine's-IP>:5500` (accept the certificate once at `:8000/health` and at `:5500`).
+- **Admin panel:** `http://localhost:3000`, or `http://<IP>:3000` from another device.
+
+No IP address is hard-coded anywhere.
 
 `scripts/train_all.py` runs the whole pipeline together with the earlier models. All random seeds are fixed at 42, and a full rerun reproduced every number in this document.
 
@@ -463,7 +496,11 @@ cd ..\web ; npm run dev      # then open http://localhost:3000/planner
   - `scripts/train_model4_mixed_setpoint.py`;
   - `backend/app/load_planner.py`;
   - `backend/app/routers/planner.py`;
-  - `web/src/app/planner/page.tsx`.
+  - `backend/app/routers/ai.py`;
+  - `phone-bridge/js/wizard.js` (step 3) and `phone-bridge/js/dashboard.js` (AI panel);
+  - `web/src/app/planner/page.tsx`;
+  - `web/src/app/ai/page.tsx`;
+  - `start_frostmind.py`.
 - **Models:** `models/model5_compatibility.pkl` and `models/model4_mixed_setpoint.pkl`, each with a `_metrics.json` file.
 - **Figures:** `docs/figures/model4_5/`.
 

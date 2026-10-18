@@ -271,8 +271,17 @@ also carry `lat`/`lng` through for completeness.
 - `GET /analytics/fleet?days=30` -- fleet-wide alert/shipment trends (admin-JWT); see "Fleet
   analytics" above
 - `GET /categories` -- the 6 `PRODUCT_LIBRARY` categories, for the setup wizard's dropdown
+- `POST /shipments` also accepts `products: [{product_id, quantity_kg}]` instead of `category` -- a
+  mixed load: checked by Model 5 + policy vetoes (422 with the groups if they can't share one
+  compartment), Model 4's setpoint stored; `/ingest` then tracks shelf life per product and flags
+  readings more than 3 C from that setpoint
+- `GET /shipments/{id}/live` -- phone dashboard feed, authorised with that truck's device
+  `X-Device-Key`: shipment (incl. per-product shelf life + setpoint), latest reading, last 5 alerts
+  with LLM explanations, AI status
+- `GET /ai/status` -- every AI component's live status, measured scores and usage counts (public);
+  `POST /ai/llm/test` -- admin-JWT one-click LLM round trip (reply, model, latency)
 - `GET /products` -- the 155-product Load Planner catalog (public reference data, like `/categories`)
-- `POST /planner/plan` -- admin-JWT. Takes `{products:[{product_id, quantity_kg}], truck_id?, sigma_c?}` and returns pairwise compatibility (Model 5 probability, policy vetoes, reasons), the compatible groups, and each group's recommended setpoint (Model 4, guarded by the physics optimizer) plus the nearest FROSTMIND device category. See "Load Planner" below.
+- `POST /planner/plan` -- public (pure calculation; the phone wizard uses it). Takes `{products:[{product_id, quantity_kg}], truck_id?, sigma_c?}` and returns pairwise compatibility (Model 5 probability, policy vetoes, reasons), the compatible groups, and each group's recommended setpoint (Model 4, guarded by the physics optimizer) plus the nearest FROSTMIND device category. See "Load Planner" below.
 - `GET /health` -- `model1_status` honestly reflects whether a real Model 1 `.pkl` was found and
   loaded at startup (`"active (scoring live /ingest readings)"` vs.
   `"not-yet-wired (device threshold rule is the live anomaly signal)"`) -- never overclaims

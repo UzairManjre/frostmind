@@ -21,6 +21,55 @@ function fmtDate(iso: string | null) {
   return iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "-";
 }
 
+// Mixed load (Load Planner): what's on board, Model 4's recommended setpoint for that mix, and
+// Model 3 shelf life per product (the shipment-level card shows the most perishable one).
+function MixedLoadPanel({ shipment }: { shipment: Shipment }) {
+  const per = new Map((shipment.product_shelf_life ?? []).map((p) => [p.product_id, p]));
+  const method: Record<string, string> = { ml: "AI · Model 4", physics: "physics optimizer", physics_fallback: "physics (AI disagreed)" };
+  return (
+    <Panel
+      title="Mixed load · AI plan"
+      subtitle="Products checked compatible by Model 5 when the shipment was created; setpoint from Model 4; shelf life per product from Model 3."
+      action={
+        <span className="chip-fade">{method[shipment.setpoint_method ?? ""] ?? shipment.setpoint_method ?? "planner"}</span>
+      }
+    >
+      <div className="grid gap-6 md:grid-cols-[14rem_1fr]">
+        <div>
+          <p className="text-[10px] uppercase tracking-wide text-faint">Recommended setpoint</p>
+          <p className="display num text-[3rem] leading-none text-white">
+            {shipment.recommended_setpoint_c != null ? `${shipment.recommended_setpoint_c.toFixed(1)}°` : "--"}
+          </p>
+          {shipment.setpoint_band && (
+            <p className="mt-2 text-xs text-faint">
+              near-optimal {shipment.setpoint_band[0].toFixed(1)} to {shipment.setpoint_band[1].toFixed(1)} °C
+            </p>
+          )}
+        </div>
+        <ul className="space-y-3">
+          {shipment.products!.map((p) => {
+            const sl = per.get(p.product_id);
+            return (
+              <li key={p.product_id}>
+                <div className="flex items-baseline justify-between gap-3 text-[13px]">
+                  <span className="text-peri-50">
+                    {p.name} <span className="font-mono text-[10px] text-faint">{p.quantity_kg} kg</span>
+                  </span>
+                  <span className="num text-peri-100/80">
+                    {sl ? `${(sl.consumed_fraction * 100).toFixed(sl.consumed_fraction < 0.01 ? 2 : 1)}%` : "--"}
+                    {sl?.remaining_hours != null && <span className="ml-2 text-[11px] text-faint">{sl.remaining_hours >= 48 ? `${(sl.remaining_hours / 24).toFixed(1)} d left` : `${sl.remaining_hours.toFixed(1)} h left`}</span>}
+                  </span>
+                </div>
+                <Meter fraction={sl ? sl.consumed_fraction : 0} className="mt-1.5" />
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </Panel>
+  );
+}
+
 function ShelfLifeCard({ shipment }: { shipment: Shipment }) {
   const fraction = shipment.shelf_life_consumed_fraction;
   return (
@@ -191,13 +240,18 @@ function ShipmentDetailBody({ id }: { id: string }) {
               </>
             }
             label="Anomaly flags"
-            hint="Device's on-device threshold rule (Model 1 ML scoring isn't wired up yet)"
+            hint={
+              shipment.recommended_setpoint_c != null
+                ? "Device rule + drift from Model 4's setpoint (see AI Models for Model 1 status)"
+                : "Device's on-device threshold rule (see AI Models for Model 1 status)"
+            }
           />
           <ShelfLifeCard shipment={shipment} />
         </div>
       </PageHeader>
 
       <PageBody>
+        {shipment.products && shipment.products.length > 0 && <MixedLoadPanel shipment={shipment} />}
         <Panel
           index={1}
           title="Temperature / humidity / door history"

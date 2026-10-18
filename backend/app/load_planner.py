@@ -287,3 +287,81 @@ def plan_load(items: list[tuple[str, float]], sigma: float | None = None) -> dic
         "pairs": [{k: v for k, v in p.items() if not k.startswith("_") and k not in ("i", "j")} for p in pairs],
         "warnings": warnings,
     }
+
+
+# ---------------------------------------------------------------------------------------------
+# Mixed-load shipments (POST /shipments with products, /ingest shelf life)
+# ---------------------------------------------------------------------------------------------
+def plan_for_shipment(items: list[tuple[str, float]], sigma: float | None = None) -> dict:
+    """Validates that the products can share ONE compartment and returns what the shipment row
+    stores. Raises ValueError(dict) with the planner's grouping when they can't."""
+    plan = plan_load(items, sigma)
+    groups = plan["groups"]
+    if len(groups) != 1 or not groups[0]["feasible"]:
+        clashes = [
+            {"a": p["a"], "b": p["b"], "why": (p["vetoes"] + p["reasons"])[:2] or ["Model 5 predicts they don't travel well together."]}
+            for p in plan["pairs"]
+            if not p["compatible"]
+        ]
+        raise ValueError(
+            {
+                "message": "These products can't share one compartment -- ship each group on its own truck/compartment.",
+                "groups": [[p["name"] for p in g["products"]] for g in groups],
+                "clashes": clashes,
+            }
+        )
+    g = groups[0]
+    # Shipment category (shown in the UI, Model 3 baseline) = the heaviest product's FROSTMIND
+    # category; the device category (what the ESP is told via set_category) is the one whose
+    # setpoint is closest to Model 4's recommendation -- they can differ (apples -> produce,
+    # but the device's nearest setting to -0.9 C is the 0 C "seafood" preset).
+    heaviest = max(g["products"], key=lambda p: p["quantity_kg"])
+    main_category = CATALOG.iloc[_POS[heaviest["product_id"]]]["frostmind_category"]
+    return {
+        "products": [{"product_id": p["product_id"], "name": p["name"], "quantity_kg": p["quantity_kg"]} for p in g["products"]],
+        "category": main_category,
+        "device_category": g["device_category"],
+        "device_category_within_1c": g["device_category_within_1c"],
+        "recommended_setpoint_c": g["recommended_setpoint_c"],
+        "setpoint_band": g["band_c"],
+        "setpoint_method": g["method"],
+        "sigma_c": plan["sigma_c"],
+    }
+
+
+def product_shelf_life(products: list[dict], temps_c: list[float], hours: list[float], current_temp_c: float) -> list[dict]:
+    """Per-product shelf-life consumption over the exposure history so far.
+
+    Food/produce: the same Q10/Arrhenius decay Model 4 optimises (Q10 derived from Model 3's Ea,
+    rated shelf life from the catalog): consumed = integral of Q10^((T - T_opt)/10) / SL dt.
+    Pharma (no catalog shelf life): Model 3's own Arrhenius model for its FROSTMIND category."""
+    from app.ml import compute_shelf_life  # local import: app.ml has no dependency on this module
+
+    temps = np.asarray(temps_c, dtype=float)
+    hrs = np.asarray(hours, dtype=float)
+    out = []
+    for item in products:
+        pos = _POS.get(item.get("product_id"))
+        if pos is None or len(temps) < 2:
+            continue
+        r = CATALOG.iloc[pos]
+        sl_days = r["shelf_life_days"]
+        if r["safety_class"] == "pharma" or pd.isna(sl_days):
+            consumed, remaining = compute_shelf_life(r["frostmind_category"], list(temps), list(hrs), current_temp_c)
+        else:
+            sl_h = float(sl_days) * 24.0
+            q10, t_opt = float(r["q10"]), float(r["t_opt_c"])
+            rate = np.power(q10, (temps - t_opt) / 10.0) / sl_h
+            consumed = float(np.trapezoid(rate, hrs))
+            rate_now = q10 ** ((current_temp_c - t_opt) / 10.0) / sl_h
+            remaining = max(0.0, 1.0 - consumed) / rate_now if rate_now > 0 else None
+        out.append(
+            {
+                "product_id": item["product_id"],
+                "name": item.get("name") or r["name"],
+                "quantity_kg": item.get("quantity_kg"),
+                "consumed_fraction": round(float(consumed), 5),
+                "remaining_hours": None if remaining is None else round(float(remaining), 2),
+            }
+        )
+    return out

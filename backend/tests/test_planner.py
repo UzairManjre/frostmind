@@ -21,9 +21,10 @@ def _group_of(plan, pid):
     return next(g for g in plan["groups"] if any(p["product_id"] == pid for p in g["products"]))
 
 
-def test_plan_requires_admin_auth(client):
+def test_plan_is_public_for_the_phone_app(client):
+    # The phone wizard has no admin login; the plan is a pure calculation over the public catalog.
     resp = client.post("/planner/plan", json={"products": [{"product_id": "apples"}]})
-    assert resp.status_code == 401
+    assert resp.status_code == 200
 
 
 def test_products_lists_the_catalog(client):
