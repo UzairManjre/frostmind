@@ -25,13 +25,16 @@ function el(html) {
 export function renderDashboard(ctx) {
   const node = el(`
     <section class="card">
-      <div class="step-header"><h2>Live: ${ctx.shipment?.label || ctx.shipment?.id || "shipment"}</h2></div>
-      <p>Truck: <strong>${ctx.truck?.label || "-"}</strong> &middot; Category:
-      <strong>${ctx.shipment?.category || "-"}</strong></p>
+      <div class="step-header">
+        <span class="step-badge">Live shipment <span class="idx">(06) / 06</span></span>
+        <h2>${ctx.shipment?.label || ctx.shipment?.id || "shipment"}</h2>
+      </div>
+      <p class="meta"><span>Truck <strong>${ctx.truck?.label || "-"}</strong></span>
+      <span>Category <strong>${ctx.shipment?.category || "-"}</strong></span></p>
 
       <div class="grid">
+        <div class="tile highlight"><span class="tile-label">Temperature</span><span class="tile-value" id="live-temp">-</span></div>
         <div class="tile"><span class="tile-label">BLE</span><span class="tile-value" id="ble-status">-</span></div>
-        <div class="tile"><span class="tile-label">Temp</span><span class="tile-value" id="live-temp">-</span></div>
         <div class="tile"><span class="tile-label">Humidity</span><span class="tile-value" id="live-hum">-</span></div>
         <div class="tile"><span class="tile-label">Door</span><span class="tile-value" id="live-door">-</span></div>
         <div class="tile"><span class="tile-label">Pending sync</span><span class="tile-value" id="queue-length">-</span></div>

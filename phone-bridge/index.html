@@ -1,24 +1,46 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#05071a" />
 <title>FROSTMIND Phone Bridge</title>
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  rel="stylesheet"
+  href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;400;500&family=Geist+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap"
+/>
 <link rel="stylesheet" href="css/style.css" />
 
 <header>
   <div class="brand">
-    <div class="brand-mark" aria-hidden="true">&#10052;&#65039;</div>
+    <div class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2v20M4.5 6.5l15 11M19.5 6.5l-15 11" />
+        <path d="M9.5 3.5 12 6l2.5-2.5M9.5 20.5 12 18l2.5 2.5" />
+      </svg>
+    </div>
     <div>
       <h1>FROSTMIND</h1>
-      <div class="subtitle">phone bridge</div>
+      <div class="subtitle">Phone bridge</div>
     </div>
   </div>
-  <button id="settings-toggle" type="button">Settings</button>
+  <button id="settings-toggle" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
+      <circle cx="16" cy="7" r="2" />
+      <circle cx="8" cy="17" r="2" />
+    </svg>
+    Settings
+  </button>
 </header>
 
 <main>
   <section class="card" id="settings-panel">
-    <h2>Settings</h2>
+    <div class="step-header">
+      <span class="step-badge">Connection <span class="idx">(00)</span></span>
+      <h2>Settings</h2>
+    </div>
     <label>Backend API base URL
       <input type="text" id="api-base-input" placeholder="http://192.168.1.20:8000" />
     </label>
