@@ -1,0 +1,3 @@
+# Raw source snapshots must stay byte-identical to what fetch_product_data.py downloaded --
+# their SHA-256 hashes are recorded in data/product_catalog/raw/SOURCES.json.
+data/product_catalog/raw/*.html -text
