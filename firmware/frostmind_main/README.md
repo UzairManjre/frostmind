@@ -242,7 +242,7 @@ If no category has been set, `DEFAULT_SETPOINT_C` (4.0°C) is used.
 
 ## Serial command set (manual-fallback pairing flow)
 
-Bench-test keys: `x` = IR LED test (3 s flashing, view through a phone's front camera), `g` = light strip colour test (red, green, blue, white, 1 s each), `d` = light strip demo (every pattern, 4 s each, its meaning printed). Live console with these keys: `.venv\Scripts\python.exe scripts\esp_console.py`.
+Bench-test keys: `x` = IR LED test (3 s flashing, view through a phone's front camera), `g` = light strip colour test (red, green, blue, white, 1 s each), `d` = light strip demo (every look, 4.5 s each, its meaning printed). Live console with these keys: `.venv\Scripts\python.exe scripts\esp_console.py`.
 
 
 Same key bindings as `frostmind_brand_select_ir.ino`, adapted into this
@@ -267,10 +267,19 @@ connection regardless of which pairing mode is active.
 
 ## Status light strip (WS2812 / WS281x, GRB)
 
-An RGB strip on GPIO4 shows the device's state at a glance, so nobody needs to open the phone to
-see that something is wrong. `STATUS_LED_COUNT` (default 8) is the number of LEDs used; any
-beyond it stay dark. `STATUS_LED_BRIGHTNESS` (default 40/255) caps every channel, which keeps 8
-LEDs at full white to about 75 mA, so USB power is enough.
+An 11-LED RGB strip on pad D3 (GPIO4) shows the device's state at a glance, so nobody needs to
+open the phone to see that something is wrong. It's designed to move like a "glyph" light rather
+than blink like a traffic light:
+- every frame is drawn in floating point, with lights at sub-pixel positions, so a moving light
+  glides between LEDs instead of hopping;
+- every change of state dissolves over 450 ms (`LED_CROSSFADE_MS`) instead of cutting;
+- 60 fps, gamma-corrected and temporally dithered output, so slow fades don't step;
+- a curated palette: a frost family (icy white, cyan, glacier blue) for the device's own
+  states, softened status colours (mint, lime, amber, coral), and a blue-violet-pink-orange
+  gradient reserved for the AI.
+
+`STATUS_LED_COUNT` (11) is the number of LEDs used. `STATUS_LED_BRIGHTNESS` (80/255, applied
+after gamma) caps every channel, so USB power is enough.
 
 **Wiring:** strip **5V** → board **5V** pin, **GND** → **GND**, **DIN** → pad **D3** (GPIO4). Connect to the
 strip's *input* end: the small arrows printed on the strip point away from it, and the pad says
@@ -279,24 +288,24 @@ for a short wire.
 
 What it shows, highest priority first (the same order as `drawLiveStatus()` in the `.ino`):
 
-| Pattern | Meaning |
+| Look | Meaning |
 |---|---|
-| Cyan sweep, once | booted and ready |
-| 2 green flashes | phone connected over Bluetooth |
-| 2 white flashes | a command from the phone was received (e.g. `set_category`) |
-| 3 green / 3 red flashes | AC auto-pairing matched / no match |
-| Rainbow, 5 s | `identify` from the phone: this is the box you're connected to |
-| **Fast red double flash** (every 1 s) | device alarm: the same rule that fires the IR intervention. Temperature >3 °C off the category setpoint, changing >3 °C/min, or door open >60 s |
-| **Purple double flash** (every 2 s; every 1 s if critical) | the backend's AI raised an alert in the last 10 min (e.g. drift from Model 4's setpoint, shelf-life threshold). The explanation is on the phone |
-| **Amber double flash** (every 2 s) | door open (not yet an alarm) |
-| Blue scanner over a dim fill | AC auto-pairing running; the fill shows progress through the candidates |
-| Blue breathing | waiting for the phone (Bluetooth not connected) |
-| **Bar** | shipment running: lit LEDs = Model 3 shelf life **left**. Green >50 %, amber 20-50 %, red <20 %. Whole strip dim red = used up. The tip breathes |
-| Green / amber breathing | connected, no shipment data yet: temperature within 1.5 °C of the setpoint / 1.5-3 °C off |
-| Dim white breathing | no sensor reading yet |
+| **Frost bloom**: light blooms out from the centre, white core to glacier-blue edge | booted and ready |
+| **Handshake**: two lights glide in from the ends, meet and flare | phone connected over Bluetooth |
+| **Ripple**: one ring of light running outward | a command from the phone arrived (e.g. `set_category`) |
+| **Mint sweep** / **shake** (a coral light shaking side to side, like a wrong password) | AC auto-pairing matched / no match |
+| **Spectrum**: the hue circle turning along the strip, a white glint passing through, 5 s | `identify` from the phone: this is the box you're connected to |
+| **Coral heartbeat** (lub-dub, about once a second) | device alarm: the same rule that fires the IR intervention. Temperature >3 °C off the category setpoint, changing >3 °C/min, or door open >60 s |
+| **Blue-violet-pink wave** flowing along the strip every 4 s (2.6 s if critical) | the backend's AI raised an alert in the last 10 min (e.g. drift from Model 4's setpoint, shelf-life threshold). The explanation is on the phone |
+| **Amber light spilling in from both ends** | door open (not yet an alarm) |
+| **Ice comet** sweeping end to end over a faint fill | AC auto-pairing running; the fill shows progress through the candidates |
+| **Beacon**: a glacier-blue light breathing at the centre | waiting for the phone (Bluetooth not connected) |
+| **Shelf-life bar** | shipment running: length = Model 3 shelf life **left** (sub-pixel). Colour slides mint → lime → amber → coral as it drains; a sheen runs along it. Whole strip glowing coral = used up |
+| **Thermal aura**: a slowly drifting two-tone glow | connected, no shipment data yet. Mint/ice = on target, warming to amber as it drifts, coral past the alarm threshold |
+| Small warm glow | no sensor reading yet |
 
-The alarm flashes take only the last 600 ms of each cycle, so the bar underneath stays readable:
-"green bar + purple flashes" reads as "plenty of shelf life left, but the AI has flagged
+The three alerts are blended over the scene, so the bar underneath stays readable: "mint bar +
+an AI wave every few seconds" reads as "plenty of shelf life left, but the AI has flagged
 something".
 
 Shelf life and the backend alert come from the phone (`{"cmd":"led",...}`). The device can't
@@ -304,8 +313,8 @@ compute them itself because the product data and the models live on the server. 
 is the device's own state, so the strip still works without a phone.
 
 Bench checks:
-- `g`: red, green, blue, white for 1 s each. If the first colour isn't red, the strip isn't GRB.
-- `d`: every pattern above, 4 s each, with its meaning printed to Serial. Good for a demo.
+- `g`: plain red, green, blue, white for 1 s each. If the first colour isn't red, the strip isn't GRB.
+- `d`: every look above, 4.5 s each, with its meaning printed to Serial. Good for a demo.
 
 ## Threshold-rule alert logic (Model 1, Stage 1 — MVP plan §4)
 

@@ -13,7 +13,7 @@ The doc `FROSTMIND_MVP_Implementation_and_AI_Plan (1).md` already cross-referenc
 | MC-38 reed switch | 2-wire, N.O. + magnet | 1 | door/lid sensor |
 | IR LED | 940nm, 5mm | 1 | transmit only — this build has no receiver |
 | Resistor | 100-220 ohm | 1 | IR LED current limit |
-| WS2812 / WS281x RGB LED strip | 5 V, addressable, **GRB** colour order, 3 wires (5V / GND / DIN) | 1 | status lights: pairing, shelf life, alerts. Firmware uses the first 8 LEDs (`STATUS_LED_COUNT`) |
+| WS2812 / WS281x RGB LED strip | 5 V, addressable, **GRB** colour order, 3 wires (5V / GND / DIN), 11 LEDs | 1 | status lights: pairing, shelf life, alerts (`STATUS_LED_COUNT` = 11) |
 | Breadboard + jumper wires | - | - | for everything above |
 | USB-C cable | data-capable | 1 | a charge-only cable will not flash the board |
 
@@ -46,7 +46,7 @@ Fixed by the firmware — these are the actual constants in `firmware/frostmind_
 - **DHT11/DHT22:** VCC->3V3, GND->GND, DATA->D8 (GPIO7). Only 3 wires — there's no SDA/SCL to mix up.
 - **Reed switch:** one leg->D4 (GPIO5), other leg->GND. No external resistor — the firmware enables the internal pull-up (`INPUT_PULLUP`), and **HIGH means the door is open** (magnet away → switch open → pin pulled up). This was corrected after real-hardware testing; see `loop()` in the `.ino`.
 - **IR LED:** D5 (GPIO6) -> resistor (100-220 ohm, optional for a short test) -> LED anode (longer leg) -> cathode -> GND. Aim broadly at the AC's front panel; a meter or two away is fine for direct-drive.
-- **LED strip (WS2812, GRB):** strip 5V -> board 5V, strip GND -> GND, strip DIN -> D3 (GPIO4). Use the strip's **input** end: the arrows printed on the strip point away from it and the pad says `DIN`, not `DO`. Wired to the wrong end, nothing lights. A 300-500 ohm resistor in series on DIN is good practice but not required for a short jumper. Brightness is capped in firmware, so 8 LEDs stay under ~75 mA and USB power is enough. What each colour means: `firmware/frostmind_main/README.md` "Status light strip".
+- **LED strip (WS2812, GRB):** strip 5V -> board 5V, strip GND -> GND, strip DIN -> D3 (GPIO4). Use the strip's **input** end: the arrows printed on the strip point away from it and the pad says `DIN`, not `DO`. Wired to the wrong end, nothing lights. A 300-500 ohm resistor in series on DIN is good practice but not required for a short jumper. Brightness is capped in firmware, so USB power is enough for the 11 LEDs. What each colour means: `firmware/frostmind_main/README.md` "Status light strip".
 - **Everything else (D0, D1, D2, D6, D7, D9, D10):** leave empty. In particular, no wire from D1 (GPIO2) to 3V3.
 - **Power:** USB-C from whichever machine you're flashing from.
 
@@ -83,7 +83,7 @@ Work through these before touching the AC — they isolate wiring problems from 
 4. Open/close the reed switch by hand — the `door` column flips 0/1.
 5. Scan for BLE device `FROSTMIND` with any generic scanner app (e.g. nRF Connect) — confirms the radio side works even before the phone app is tested against real hardware.
 6. Send a test IR command (serial key `n`, or `x` for a 3 s test flash) and view the LED through a phone camera — IR is invisible to the eye but shows as a flicker on camera.
-7. The LED strip plays a cyan sweep at boot. Serial key `g` shows red, green, blue, white for 1 s each (if the first isn't red, the colour order isn't GRB); `d` runs through every status pattern with its meaning printed.
+7. The LED strip plays a cyan sweep at boot. Serial key `g` shows red, green, blue, white for 1 s each (if the first isn't red, the colour order isn't GRB); `d` runs through every look with its meaning printed.
 
 ## 6. What's next
 

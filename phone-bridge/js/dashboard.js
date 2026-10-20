@@ -74,14 +74,14 @@ export function renderDashboard(ctx) {
         <details>
           <summary>What the lights mean</summary>
           <ul class="legend">
-            <li><span class="sw sw-bar"></span><span><b>Bar</b> -- shelf life left (Model 3, the most perishable product). Green &gt; 50 %, amber 20-50 %, red &lt; 20 %.</span></li>
-            <li><span class="sw sw-red"></span><span><b>Fast red double flash</b> -- device alarm: temperature more than 3 °C off, changing fast, or door open over 60 s.</span></li>
-            <li><span class="sw sw-purple"></span><span><b>Purple double flash</b> -- the server's AI raised an alert in the last 10 min. Read the explanation above.</span></li>
-            <li><span class="sw sw-amber"></span><span><b>Amber double flash</b> -- door open.</span></li>
-            <li><span class="sw sw-blue"></span><span><b>Blue breathing</b> -- waiting for the phone (Bluetooth not connected). <b>Blue scanner</b> -- AC auto-pairing running.</span></li>
-            <li><span class="sw sw-green"></span><span><b>Green / amber breathing</b> -- connected, no shipment data yet: temperature in range / drifting.</span></li>
-            <li><span class="sw sw-white"></span><span><b>Quick flashes</b> -- green x2 phone connected, white x2 command received, green x3 / red x3 AC paired / no match.</span></li>
-            <li><span class="sw sw-rainbow"></span><span><b>Rainbow</b> -- "identify" from this phone: it's the box you're connected to.</span></li>
+            <li><span class="sw sw-bar"></span><span><b>Shelf-life bar</b> -- length = shelf life left (Model 3, the most perishable product). The colour slides mint &rarr; lime &rarr; amber &rarr; coral as it drains; a sheen runs along it.</span></li>
+            <li><span class="sw sw-red"></span><span><b>Coral heartbeat</b> -- device alarm: temperature more than 3 °C off, changing fast, or door open over 60 s.</span></li>
+            <li><span class="sw sw-ai"></span><span><b>Blue-violet-pink wave</b> -- the server's AI raised an alert in the last 10 min. Read the explanation above.</span></li>
+            <li><span class="sw sw-amber"></span><span><b>Amber light from both ends</b> -- door open.</span></li>
+            <li><span class="sw sw-blue"></span><span><b>Blue beacon breathing at the centre</b> -- waiting for the phone. <b>Ice comet sweeping</b> -- AC auto-pairing.</span></li>
+            <li><span class="sw sw-green"></span><span><b>Mint / amber aura</b> -- connected, no shipment data yet: temperature on target / drifting.</span></li>
+            <li><span class="sw sw-white"></span><span><b>Moments</b> -- frost bloom at boot, two lights meeting when the phone connects, a ripple when a command arrives, a mint sweep / a shake when AC pairing succeeds / fails.</span></li>
+            <li><span class="sw sw-rainbow"></span><span><b>Spectrum</b> -- "identify" from this phone: it's the box you're connected to.</span></li>
           </ul>
         </details>
       </div>
@@ -224,20 +224,20 @@ export function renderDashboard(ctx) {
   // shows what the phone thinks it should.
   function renderStripNow() {
     if (!ctx.ble.connected) {
-      stripNowEl.textContent = "blue breathing -- waiting for this phone to reconnect";
+      stripNowEl.textContent = "blue beacon -- waiting for this phone to reconnect";
       return;
     }
     let base;
     if (ledStatus && ledStatus.shelf >= 0) {
-      const colour = ledStatus.shelf > 50 ? "green" : ledStatus.shelf > 20 ? "amber" : "red";
-      base = ledStatus.shelf > 0 ? `${colour} bar, ${ledStatus.shelf}% shelf life left` : "whole strip dim red, shelf life used up";
+      const colour = ledStatus.shelf > 67 ? "mint" : ledStatus.shelf > 40 ? "lime" : ledStatus.shelf > 15 ? "amber" : "coral";
+      base = ledStatus.shelf > 0 ? `${colour} bar, ${ledStatus.shelf}% shelf life left` : "whole strip glowing coral, shelf life used up";
     } else {
-      base = "green/amber breathing -- temperature vs setpoint (no shelf-life data yet)";
+      base = "mint/amber aura -- temperature vs setpoint (no shelf-life data yet)";
     }
     let overlay = "";
-    if (lastReading?.alert) overlay = " + fast red flashes (device alarm)";
-    else if (ledStatus && ledStatus.alert !== "none") overlay = " + purple flashes (AI alert)";
-    else if (lastReading?.door) overlay = " + amber flashes (door open)";
+    if (lastReading?.alert) overlay = " + coral heartbeat (device alarm)";
+    else if (ledStatus && ledStatus.alert !== "none") overlay = " + blue-violet-pink AI wave";
+    else if (lastReading?.door) overlay = " + amber light from both ends (door open)";
     stripNowEl.textContent = base + overlay;
   }
 
