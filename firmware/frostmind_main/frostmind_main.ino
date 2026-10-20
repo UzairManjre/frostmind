@@ -1,10 +1,11 @@
 /*
  * FROSTMIND -- main deployable firmware
  *
- * ESP32-S3 + DHT11/DHT22 (single-wire temp/humidity, DATA=GPIO8) + MC-38 reed
- * switch (door, GPIO4, INPUT_PULLUP, HIGH=open) + IR transmitter (GPIO6,
+ * ESP32-S3 + DHT11/DHT22 (single-wire temp/humidity, DATA=GPIO7) + MC-38 reed
+ * switch (door, GPIO5, INPUT_PULLUP, HIGH=open) + IR transmitter (GPIO6,
  * transmit-only -- no TSOP38238 in this build, nothing is ever received or
- * decoded).
+ * decoded) + WS2812/WS281x RGB status light strip (DIN=GPIO4, GRB colour
+ * order) that shows pairing, shelf life and alerts at a glance.
  *
  * SENSOR NOTE: earlier versions of this sketch (and the plan docs) assumed
  * an SHT31-D over I2C. The actual sensor on hand has 3 pins (VCC/GND/DATA),
@@ -63,7 +64,8 @@
 static const uint8_t PIN_DHT = 7;     // DHT11/DHT22 single-wire DATA pin (moved from GPIO8: matches the rewired board, confirmed by a pin scan)
 static const uint8_t PIN_REED = 5;    // INPUT_PULLUP, HIGH = door open (see loop()) -- moved from GPIO4 to match the rebuilt board
 static const uint16_t PIN_IR_LED = 6;
-// GPIO4 and GPIO8 are free (the original reed / DHT pins before the board was rebuilt).
+static const uint8_t PIN_STATUS_LEDS = 4; // WS2812/WS281x strip DIN (the original reed pin, free since the rebuild)
+// GPIO8 is free (the original DHT pin before the board was rebuilt).
 // GPIO9 is free -- it was SCL back when this used an I2C SHT31-D.
 
 // ===========================================================================
@@ -90,6 +92,17 @@ static const int INTERVENE_COOL_DEGREES = 18;                    // degrees sent
 // alert to trigger a new intervention. Also doubles as the liveness signal the phone
 // dashboard's "AC last changed" tile relies on -- see bleSendTelemetry()'s ac_last_cmd_ms.
 static const unsigned long AC_HEARTBEAT_INTERVAL_MS = 5UL * 60UL * 1000UL;
+
+// ===========================================================================
+// Tunable constants -- status light strip (WS2812/WS281x, GRB colour order).
+// What each pattern means is listed in README.md "Status light strip".
+// ===========================================================================
+static const int STATUS_LED_COUNT = 8;                // LEDs on the strip; any beyond this stay dark
+static const uint8_t STATUS_LED_BRIGHTNESS = 40;      // 0-255 cap on every channel: readable indoors, and 8 LEDs at full white stay ~75 mA (fine on USB 5V)
+static const unsigned long STATUS_LED_FRAME_MS = 25;  // ~40 fps animation
+static const unsigned long PHONE_STATUS_STALE_MS = 2UL * 60UL * 1000UL; // phone re-sends shelf life/alerts every ~10 s; older than this isn't shown
+static const float TEMP_DRIFT_WARN_C = 1.5f;          // amber "drifting" before the 3 C alert threshold turns it red
+static const unsigned long LED_DEMO_STEP_MS = 4000;   // serial 'd': how long each pattern of the demo is shown
 
 // ===========================================================================
 // Tunable constants -- automatic AC-pairing algorithm (Phase2 plan §3)
@@ -206,6 +219,50 @@ bool everIntervened = false;
 
 // Serial CSV header printed once
 bool csvHeaderPrinted = false;
+
+// ===========================================================================
+// Globals -- status light strip
+// ===========================================================================
+struct Rgb {
+  uint8_t r, g, b;
+};
+static const Rgb C_OFF = {0, 0, 0};
+static const Rgb C_RED = {255, 0, 0};
+static const Rgb C_GREEN = {0, 255, 0};
+static const Rgb C_BLUE = {0, 0, 255};
+static const Rgb C_AMBER = {255, 100, 0};
+static const Rgb C_CYAN = {0, 180, 255};
+static const Rgb C_PURPLE = {170, 0, 255};
+static const Rgb C_WHITE = {255, 255, 255};
+
+Rgb statusLedFrame[STATUS_LED_COUNT];                // colours before the brightness cap
+rmt_data_t statusLedSymbols[STATUS_LED_COUNT * 24]; // 24 bits per LED, one RMT symbol per bit
+bool statusLedsReady = false;
+unsigned long lastLedFrameMs = 0;
+
+// One-shot patterns that briefly take over the whole strip, then hand back to the normal view.
+enum LedEvent { LE_NONE, LE_BOOT, LE_CONNECTED, LE_COMMAND_OK, LE_PAIR_MATCHED, LE_PAIR_NO_MATCH, LE_IDENTIFY, LE_COLOUR_TEST };
+LedEvent ledEvent = LE_NONE;
+unsigned long ledEventStartMs = 0;
+unsigned long ledEventDurationMs = 0;
+
+// Forwarded by the phone ({"cmd":"led",...}) from the backend: Model 3 shelf life LEFT and the
+// newest backend alert (Model 4 setpoint drift, shelf-life threshold, ...). The device can't
+// compute either itself -- the product data and the models live on the server.
+int phoneShelfPct = -1;   // 0-100 % left, -1 = no shipment data yet
+int phoneAlertLevel = 0;  // 0 none, 1 warning, 2 critical
+unsigned long phoneStatusMs = 0;
+bool phoneStatusSeen = false;
+
+// The device's own view, refreshed every sensor sample in loop().
+bool ledLocalAlert = false;      // same tempAlert || doorAlert that fires the IR intervention
+bool ledTempValid = false;
+float ledTempDeviationC = 0.0f;  // temp - category setpoint
+
+// Serial 'd': steps through every pattern with its meaning printed, for demos.
+bool ledDemoActive = false;
+unsigned long ledDemoStartMs = 0;
+int ledDemoLastStep = -1;
 
 // ===========================================================================
 // Globals -- BLE
@@ -544,6 +601,256 @@ void logCsvRow(unsigned long nowMs, float tempC, float humidity, bool doorIsOpen
 }
 
 // ===========================================================================
+// Status light strip (WS2812/WS281x, GRB). Driven straight from the esp32
+// core's RMT peripheral API -- the same calls the core's own rgbLedWrite()
+// uses for a single LED, extended to a whole strip -- so there is no extra
+// library to install. RMT generates the bit timing in hardware, so BLE and
+// the DHT read don't disturb it.
+//
+// What the strip shows, highest priority first:
+//   1. One-shot events (boot sweep, phone connected, command received, AC
+//      pairing result, "identify" rainbow) -- a second or so, then back.
+//   2. Alarm flashes: the last 600 ms of every 1-2 s cycle become a double
+//      flash -- red = device alarm, purple = backend AI alert, amber = door
+//      open -- so the pattern underneath stays readable in between.
+//   3. The base pattern: blue scanner while AC pairing runs; blue breathing
+//      while no phone is connected; the shelf-life bar during a shipment;
+//      otherwise green/amber breathing for "temperature in range/drifting".
+// ===========================================================================
+void statusLedsBegin() {
+  // 10 MHz RMT tick = 0.1 us resolution, which is what the WS2812 timings below are written in.
+  statusLedsReady = rmtInit(PIN_STATUS_LEDS, RMT_TX_MODE, RMT_MEM_NUM_BLOCKS_2, 10000000);
+  if (!statusLedsReady) {
+    Serial.println("Status LEDs: RMT init failed on the strip pin -- light strip disabled.");
+  }
+}
+
+void statusLedsShow() {
+  if (!statusLedsReady) return;
+  int i = 0;
+  for (int p = 0; p < STATUS_LED_COUNT; p++) {
+    const uint8_t grb[3] = {statusLedFrame[p].g, statusLedFrame[p].r, statusLedFrame[p].b}; // this strip's colour order
+    for (int c = 0; c < 3; c++) {
+      uint8_t v = (uint16_t)grb[c] * STATUS_LED_BRIGHTNESS / 255;
+      for (int bit = 7; bit >= 0; bit--) {
+        bool one = v & (1 << bit);
+        statusLedSymbols[i].level0 = 1;
+        statusLedSymbols[i].duration0 = one ? 8 : 4; // high 0.8 us = 1, 0.4 us = 0
+        statusLedSymbols[i].level1 = 0;
+        statusLedSymbols[i].duration1 = one ? 4 : 8;
+        i++;
+      }
+    }
+  }
+  rmtWrite(PIN_STATUS_LEDS, statusLedSymbols, i, RMT_WAIT_FOR_EVER); // ~0.25 ms for 8 LEDs
+}
+
+void ledSet(int p, Rgb c, float level = 1.0f) {
+  if (p < 0 || p >= STATUS_LED_COUNT) return;
+  statusLedFrame[p] = {(uint8_t)(c.r * level), (uint8_t)(c.g * level), (uint8_t)(c.b * level)};
+}
+
+void ledFill(Rgb c, float level = 1.0f) {
+  for (int p = 0; p < STATUS_LED_COUNT; p++) ledSet(p, c, level);
+}
+
+// Smooth 0.08..1 "breathing" level; squared so it lingers dim and swells, like a sleeping laptop.
+float breatheLevel(unsigned long nowMs, unsigned long periodMs) {
+  float x = 0.5f - 0.5f * cosf(2.0f * PI * (float)(nowMs % periodMs) / (float)periodMs);
+  return 0.08f + 0.92f * x * x;
+}
+
+// True during the "on" half of flash k (k < count) of an on/off sequence that started at t = 0.
+bool flashOn(unsigned long t, int count, unsigned long onMs, unsigned long offMs) {
+  return (int)(t / (onMs + offMs)) < count && (t % (onMs + offMs)) < onMs;
+}
+
+Rgb colourWheel(uint8_t pos) {
+  if (pos < 85) return {(uint8_t)(255 - pos * 3), (uint8_t)(pos * 3), 0};
+  if (pos < 170) { pos -= 85; return {0, (uint8_t)(255 - pos * 3), (uint8_t)(pos * 3)}; }
+  pos -= 170;
+  return {(uint8_t)(pos * 3), 0, (uint8_t)(255 - pos * 3)};
+}
+
+// Shelf life LEFT as a bar: lit LEDs = % left (rounded up, so any shelf life left shows at least
+// one), green > 50 %, amber 20-50 %, red < 20 %, whole strip dim red once it's used up. The tip
+// breathes so it reads as live rather than frozen.
+void drawShelfBar(int pctLeft, unsigned long nowMs) {
+  ledFill(C_OFF);
+  if (pctLeft <= 0) {
+    ledFill(C_RED, 0.5f);
+    return;
+  }
+  Rgb c = pctLeft > 50 ? C_GREEN : (pctLeft > 20 ? C_AMBER : C_RED);
+  int lit = (pctLeft * STATUS_LED_COUNT + 99) / 100;
+  for (int p = 0; p < lit; p++) ledSet(p, c);
+  ledSet(lit - 1, c, breatheLevel(nowMs, 2000));
+}
+
+// AC pairing: a blue dot sweeping back and forth over a dim fill showing how far through the
+// candidate list the sweep has got.
+void drawPairingScanner(float progress, unsigned long nowMs) {
+  ledFill(C_OFF);
+  int filled = (int)(progress * STATUS_LED_COUNT);
+  for (int p = 0; p < filled; p++) ledSet(p, C_BLUE, 0.15f);
+  int pos = 0;
+  if (STATUS_LED_COUNT > 1) {
+    int span = 2 * STATUS_LED_COUNT - 2;
+    pos = (nowMs / 110) % span;
+    if (pos >= STATUS_LED_COUNT) pos = span - pos;
+  }
+  ledSet(pos, C_BLUE);
+}
+
+// The last 600 ms of every cycle become a double flash in the alarm colour.
+void drawAlarmOverlay(Rgb c, unsigned long periodMs, unsigned long nowMs) {
+  unsigned long t = nowMs % periodMs;
+  if (t + 600 < periodMs) return;
+  ledFill(flashOn(t - (periodMs - 600), 2, 150, 150) ? c : C_OFF);
+}
+
+void drawIdentify(unsigned long t) {
+  for (int p = 0; p < STATUS_LED_COUNT; p++) ledSet(p, colourWheel((uint8_t)(p * 256 / STATUS_LED_COUNT + t / 4)));
+}
+
+void startLedEvent(LedEvent e, unsigned long durationMs) {
+  ledEvent = e;
+  ledEventStartMs = millis();
+  ledEventDurationMs = durationMs;
+}
+
+// Returns false once no event is running, so the normal view takes over.
+bool drawLedEvent(unsigned long nowMs) {
+  if (ledEvent == LE_NONE) return false;
+  unsigned long t = nowMs - ledEventStartMs;
+  if (t >= ledEventDurationMs) {
+    ledEvent = LE_NONE;
+    return false;
+  }
+  switch (ledEvent) {
+    case LE_BOOT: { // cyan wipe in, then fade out
+      int lit = (int)(t * STATUS_LED_COUNT / 600) + 1;
+      float level = t < 600 ? 1.0f : 1.0f - (float)(t - 600) / (float)(ledEventDurationMs - 600);
+      ledFill(C_OFF);
+      for (int p = 0; p < lit && p < STATUS_LED_COUNT; p++) ledSet(p, C_CYAN, level);
+      break;
+    }
+    case LE_CONNECTED: ledFill(flashOn(t, 2, 150, 150) ? C_GREEN : C_OFF); break;
+    case LE_COMMAND_OK: ledFill(flashOn(t, 2, 80, 120) ? C_WHITE : C_OFF, 0.6f); break;
+    case LE_PAIR_MATCHED: ledFill(flashOn(t, 3, 250, 250) ? C_GREEN : C_OFF); break;
+    case LE_PAIR_NO_MATCH: ledFill(flashOn(t, 3, 250, 250) ? C_RED : C_OFF); break;
+    case LE_IDENTIFY: drawIdentify(t); break;
+    case LE_COLOUR_TEST: { // serial 'g': red, green, blue, white for 1 s each
+      static const Rgb kTest[] = {C_RED, C_GREEN, C_BLUE, C_WHITE};
+      ledFill(kTest[(t / 1000) % 4]);
+      break;
+    }
+    default: return false;
+  }
+  return true;
+}
+
+bool phoneStatusFresh(unsigned long nowMs) {
+  return phoneStatusSeen && (nowMs - phoneStatusMs < PHONE_STATUS_STALE_MS);
+}
+
+void drawLiveStatus(unsigned long nowMs) {
+  // Base pattern
+  if (pairingActive) {
+    float progress = (numCandidates > 0 && pairingCandidateIdx >= 0) ? (float)(pairingCandidateIdx + 1) / numCandidates : 0.0f;
+    drawPairingScanner(progress, nowMs);
+  } else if (!bleDeviceConnected) {
+    ledFill(C_BLUE, breatheLevel(nowMs, 3000));
+  } else if (phoneStatusFresh(nowMs) && phoneShelfPct >= 0) {
+    drawShelfBar(phoneShelfPct, nowMs);
+  } else if (ledTempValid) {
+    float dev = fabs(ledTempDeviationC);
+    Rgb c = dev <= TEMP_DRIFT_WARN_C ? C_GREEN : (dev <= SETPOINT_DEVIATION_ALERT_THRESH_C ? C_AMBER : C_RED);
+    ledFill(c, breatheLevel(nowMs, 4000));
+  } else {
+    ledFill(C_WHITE, breatheLevel(nowMs, 4000) * 0.5f); // no sensor reading yet
+  }
+
+  // Alarm flashes on top: device rule first, then the backend's AI, then a door that's open but
+  // not yet open long enough to be an alarm.
+  if (ledLocalAlert) {
+    drawAlarmOverlay(C_RED, 1000, nowMs);
+  } else if (phoneStatusFresh(nowMs) && phoneAlertLevel > 0) {
+    drawAlarmOverlay(C_PURPLE, phoneAlertLevel >= 2 ? 1000 : 2000, nowMs);
+  } else if (doorOpen) {
+    drawAlarmOverlay(C_AMBER, 2000, nowMs);
+  }
+}
+
+// Serial 'd': every pattern, LED_DEMO_STEP_MS each, its meaning printed to Serial as it starts.
+static const char *const kLedDemoSteps[] = {
+  "Blue breathing -- waiting for the phone app (Bluetooth not connected)",
+  "Two green flashes -- phone connected",
+  "Green breathing -- connected, temperature within 1.5 C of the setpoint (no shipment yet)",
+  "Amber breathing -- temperature drifting from the setpoint (1.5-3 C off)",
+  "Green bar -- shipment running, 85% shelf life left (bar length = shelf life left)",
+  "Amber bar -- 40% shelf life left",
+  "Red bar -- 12% shelf life left",
+  "Amber double flash -- door open",
+  "Purple double flash -- the server's AI raised an alert: read the explanation on the phone",
+  "Fast red double flash -- device alarm: temperature >3 C off / changing fast, or door open >60 s",
+  "Blue scanner -- AC auto-pairing running (dim fill = progress through the candidates)",
+  "Three green flashes -- AC paired (three red flashes = no match found)",
+  "White flashes -- a command from the phone was received",
+  "Rainbow -- 'identify' pressed on the phone: this is the box you're connected to",
+};
+static const int kNumLedDemoSteps = sizeof(kLedDemoSteps) / sizeof(kLedDemoSteps[0]);
+
+void drawLedDemo(unsigned long nowMs) {
+  unsigned long t = nowMs - ledDemoStartMs;
+  int step = t / LED_DEMO_STEP_MS;
+  if (step >= kNumLedDemoSteps) {
+    ledDemoActive = false;
+    Serial.println(">>> LIGHT DEMO: done <<<");
+    return;
+  }
+  if (step != ledDemoLastStep) {
+    ledDemoLastStep = step;
+    Serial.printf(">>> LIGHT DEMO %d/%d: %s <<<\n", step + 1, kNumLedDemoSteps, kLedDemoSteps[step]);
+  }
+  unsigned long st = t % LED_DEMO_STEP_MS; // time within this step
+  switch (step) {
+    case 0: ledFill(C_BLUE, breatheLevel(nowMs, 3000)); break;
+    case 1: ledFill(flashOn(st % 1000, 2, 150, 150) ? C_GREEN : C_OFF); break;
+    case 2: ledFill(C_GREEN, breatheLevel(nowMs, 4000)); break;
+    case 3: ledFill(C_AMBER, breatheLevel(nowMs, 4000)); break;
+    case 4: drawShelfBar(85, nowMs); break;
+    case 5: drawShelfBar(40, nowMs); break;
+    case 6: drawShelfBar(12, nowMs); break;
+    case 7: drawShelfBar(85, nowMs); drawAlarmOverlay(C_AMBER, 2000, nowMs); break;
+    case 8: drawShelfBar(85, nowMs); drawAlarmOverlay(C_PURPLE, 2000, nowMs); break;
+    case 9: drawShelfBar(85, nowMs); drawAlarmOverlay(C_RED, 1000, nowMs); break;
+    case 10: drawPairingScanner((float)st / LED_DEMO_STEP_MS, nowMs); break;
+    case 11: ledFill(flashOn(st % 2000, 3, 250, 250) ? C_GREEN : C_OFF); break;
+    case 12: ledFill(flashOn(st % 1000, 2, 80, 120) ? C_WHITE : C_OFF, 0.6f); break;
+    default: drawIdentify(st); break;
+  }
+}
+
+void startLedDemo() {
+  ledDemoActive = true;
+  ledDemoStartMs = millis();
+  ledDemoLastStep = -1;
+}
+
+// Called every loop() pass; redraws at most every STATUS_LED_FRAME_MS.
+void updateStatusLeds(unsigned long nowMs) {
+  if (!statusLedsReady || nowMs - lastLedFrameMs < STATUS_LED_FRAME_MS) return;
+  lastLedFrameMs = nowMs;
+  if (ledDemoActive) {
+    drawLedDemo(nowMs);
+  } else if (!drawLedEvent(nowMs)) {
+    drawLiveStatus(nowMs);
+  }
+  statusLedsShow();
+}
+
+// ===========================================================================
 // BLE: telemetry + pairing_status TX messages (ArduinoJson, per spec --
 // no hand-rolled JSON string building)
 // ===========================================================================
@@ -623,6 +930,7 @@ void processBleCommand(const String &jsonIn) {
       saveCategory(currentCategory);
       Serial.print("BLE: category set to ");
       Serial.println(currentCategory);
+      startLedEvent(LE_COMMAND_OK, 400);
     } else {
       Serial.print("BLE: rejected unknown category: ");
       Serial.println(cat);
@@ -640,6 +948,18 @@ void processBleCommand(const String &jsonIn) {
   } else if (strcmp(cmd, "manual_confirm") == 0) {
     Serial.println("BLE: manual_confirm received.");
     manualConfirmSave();
+  } else if (strcmp(cmd, "led") == 0) {
+    // Light-strip status forwarded by the phone every ~10 s. Read as float so 72 and 72.4 both
+    // parse; clamp to 0-100.
+    float shelf = doc["shelf"] | -1.0f;
+    phoneShelfPct = shelf < 0 ? -1 : (int)lroundf(fminf(shelf, 100.0f));
+    const char *alert = doc["alert"] | "none";
+    phoneAlertLevel = strcmp(alert, "critical") == 0 ? 2 : (strcmp(alert, "warning") == 0 ? 1 : 0);
+    phoneStatusMs = millis();
+    phoneStatusSeen = true;
+  } else if (strcmp(cmd, "identify") == 0) {
+    Serial.println("BLE: identify -- rainbow on the light strip for 5 s.");
+    startLedEvent(LE_IDENTIFY, 5000);
   } else {
     Serial.print("BLE: unrecognized cmd: ");
     Serial.println(cmd);
@@ -733,6 +1053,7 @@ void serviceBleConnectionState() {
   }
   if (bleDeviceConnected && !bleOldDeviceConnected) {
     bleOldDeviceConnected = true;
+    startLedEvent(LE_CONNECTED, 600);
   }
 }
 
@@ -774,6 +1095,7 @@ void advanceToNextCandidateOrFinish(unsigned long nowMs) {
     pairingActive = false;
     Serial.println("=== Auto AC-pairing: no match after full sweep. Use manual fallback (serial l/n/y, or BLE manual_pair/manual_confirm). ===");
     bleSendPairingStatus();
+    startLedEvent(LE_PAIR_NO_MATCH, 1500);
   } else {
     beginCandidateTest(nowMs);
   }
@@ -787,6 +1109,7 @@ void acceptMatch(int idx) {
   Serial.print("=== Auto AC-pairing: MATCHED and saved: ");
   Serial.println(typeToString(candidates[idx]).c_str());
   bleSendPairingStatus();
+  startLedEvent(LE_PAIR_MATCHED, 1500);
 }
 
 void updatePairingFsm(unsigned long nowMs, float latestTemp) {
@@ -810,6 +1133,7 @@ void updatePairingFsm(unsigned long nowMs, float latestTemp) {
           pairingActive = false;
           Serial.println("=== Auto AC-pairing: no candidate protocols discovered -- nothing to test. ===");
           bleSendPairingStatus();
+          startLedEvent(LE_PAIR_NO_MATCH, 1500);
         } else {
           beginCandidateTest(nowMs);
         }
@@ -895,6 +1219,8 @@ void printMenu() {
   Serial.println("a = start automatic pairing sweep");
   Serial.println("(+, -, f, p all resend using the currently selected/paired protocol)");
   Serial.println("x = IR LED test (3 s flashing, view through a phone camera)");
+  Serial.println("g = light strip colour test (red, green, blue, white -- 1 s each)");
+  Serial.println("d = light strip demo (every pattern, 4 s each, meaning printed here)");
 }
 
 // Wiring check for the IR LED: 38 kHz carrier switched on/off at 2 Hz, so it shows as a clear
@@ -978,6 +1304,14 @@ void handleSerialInput() {
       case 'x':
         irLedTest(PIN_IR_LED, 3, false);
         break;
+      case 'g':
+        ledDemoActive = false;
+        Serial.printf(">>> LIGHT STRIP TEST (GPIO%u): RED, GREEN, BLUE, WHITE, 1 s each -- if the first colour isn't red, the colour order isn't GRB <<<\n", PIN_STATUS_LEDS);
+        startLedEvent(LE_COLOUR_TEST, 4000);
+        break;
+      case 'd':
+        startLedDemo();
+        break;
       default:
         break;
     }
@@ -1005,6 +1339,9 @@ void setup() {
   setupBle();
   printMenu();
 
+  statusLedsBegin();
+  startLedEvent(LE_BOOT, 1200); // cyan sweep = booted and ready
+
   lastSensorSampleMs = millis();
 }
 
@@ -1021,6 +1358,8 @@ void loop() {
   }
 
   unsigned long now = millis();
+  updateStatusLeds(now); // animates between sensor samples too, so it runs before the early return
+
   if (now - lastSensorSampleMs < SENSOR_SAMPLE_INTERVAL_MS) {
     return;
   }
@@ -1057,6 +1396,9 @@ void loop() {
   unsigned long doorOpenDurationMs = doorOpen ? (now - doorOpenSinceMs) : 0;
   bool doorAlert = doorOpen && (doorOpenDurationMs > DOOR_OPEN_ALERT_THRESH_MS);
   bool alertNow = tempAlert || doorAlert;
+  ledLocalAlert = alertNow;
+  ledTempValid = tempValid;
+  ledTempDeviationC = tempValid ? (tempC - setpoint) : 0.0f;
 
   // --- 3. CSV log (this line is the future training-data stream) ---
   logCsvRow(now, tempC, humidity, doorOpen, rateOfChange);

@@ -13,6 +13,7 @@ The doc `FROSTMIND_MVP_Implementation_and_AI_Plan (1).md` already cross-referenc
 | MC-38 reed switch | 2-wire, N.O. + magnet | 1 | door/lid sensor |
 | IR LED | 940nm, 5mm | 1 | transmit only — this build has no receiver |
 | Resistor | 100-220 ohm | 1 | IR LED current limit |
+| WS2812 / WS281x RGB LED strip | 5 V, addressable, **GRB** colour order, 3 wires (5V / GND / DIN) | 1 | status lights: pairing, shelf life, alerts. Firmware uses the first 8 LEDs (`STATUS_LED_COUNT`) |
 | Breadboard + jumper wires | - | - | for everything above |
 | USB-C cable | data-capable | 1 | a charge-only cable will not flash the board |
 
@@ -25,11 +26,12 @@ Fixed by the firmware — these are the actual constants in `firmware/frostmind_
 | ESP32-S3 pin | Function | Goes to |
 |---|---|---|
 | 3V3 | power | DHT VCC |
-| GND | ground | DHT GND, reed switch, IR LED return |
+| 5V (a.k.a. 5Vin / VBUS) | power from USB | LED strip 5V |
+| GND | ground | DHT GND, reed switch, IR LED return, LED strip GND |
 | GPIO7 | single-wire digital | DHT DATA (moved from GPIO8 to match the rebuilt board) |
 | GPIO5 | digital in, `INPUT_PULLUP` | reed switch (other leg -> GND) -- moved from GPIO4 to match the rebuilt board |
 | GPIO6 | digital out | resistor -> IR LED anode |
-| GPIO4 | free, unused | the original reed-switch pin |
+| GPIO4 | digital out (RMT) | LED strip DIN (the original reed-switch pin, reused) |
 | GPIO8, GPIO9 | free, unused | GPIO8 was the original DHT pin; GPIO9 was I2C SCL back when this assumed an SHT31-D |
 
 **There is no IR receiver in this build** (GPIO5, once reserved for a TSOP38238, now carries the reed switch). This project is not using IRDB, LIRC, or any IR receiver — not deferred, ruled out. See `FROSTMIND_Phase2_Implementation_Plan.md` §3 and the MVP plan's §5 for what that means for AC pairing.
@@ -41,7 +43,8 @@ Fixed by the firmware — these are the actual constants in `firmware/frostmind_
 - **DHT11/DHT22:** VCC->3V3, GND->GND, DATA->GPIO7. Only 3 wires — there's no SDA/SCL to mix up.
 - **Reed switch:** one leg->GPIO5, other leg->GND. No external resistor — the firmware enables the internal pull-up (`INPUT_PULLUP`), and **HIGH means the door is open** (magnet away → switch open → pin pulled up). This was corrected after real-hardware testing; see `loop()` in the `.ino`.
 - **IR LED:** GPIO6 -> resistor (100-220 ohm) -> LED anode (longer leg) -> cathode -> GND. Aim broadly at the AC's front panel; a meter or two away is fine for direct-drive.
-- **GPIO2, GPIO4, GPIO8:** leave unconnected (in particular, no wire from GPIO2 to 3V3).
+- **LED strip (WS2812, GRB):** strip 5V -> board 5V, strip GND -> GND, strip DIN -> GPIO4. Use the strip's **input** end: the arrows printed on the strip point away from it and the pad says `DIN`, not `DO`. Wired to the wrong end, nothing lights. A 300-500 ohm resistor in series on DIN is good practice but not required for a short jumper. Brightness is capped in firmware, so 8 LEDs stay under ~75 mA and USB power is enough. What each colour means: `firmware/frostmind_main/README.md` "Status light strip".
+- **GPIO2, GPIO8:** leave unconnected (in particular, no wire from GPIO2 to 3V3).
 - **Power:** USB-C from whichever machine you're flashing from.
 
 (The published artifact has an actual wiring diagram if you want the visual instead of the text version above.)
@@ -76,7 +79,8 @@ Work through these before touching the AC — they isolate wiring problems from 
 3. CSV rows stream every ~2s: `ts,temp,humidity,door,rate_of_change,session_label`.
 4. Open/close the reed switch by hand — the `door` column flips 0/1.
 5. Scan for BLE device `FROSTMIND` with any generic scanner app (e.g. nRF Connect) — confirms the radio side works even before the phone app is tested against real hardware.
-6. Send a test IR command (serial key `n`) and view the LED through a phone camera — IR is invisible to the eye but shows as a flicker on camera.
+6. Send a test IR command (serial key `n`, or `x` for a 3 s test flash) and view the LED through a phone camera — IR is invisible to the eye but shows as a flicker on camera.
+7. The LED strip plays a cyan sweep at boot. Serial key `g` shows red, green, blue, white for 1 s each (if the first isn't red, the colour order isn't GRB); `d` runs through every status pattern with its meaning printed.
 
 ## 6. What's next
 

@@ -67,6 +67,25 @@ export function renderDashboard(ctx) {
         <div class="chip-row" id="ai-status"></div>
       </div>
 
+      <div class="ai-panel strip-panel">
+        <div class="ai-head"><span class="ai-eyebrow">Device light strip</span><span class="ai-updated" id="strip-sent">waiting for AI data...</span></div>
+        <p class="strip-now">Showing now: <strong id="strip-now">-</strong></p>
+        <button id="identify-btn" class="secondary">Flash the device's lights (identify)</button>
+        <details>
+          <summary>What the lights mean</summary>
+          <ul class="legend">
+            <li><span class="sw sw-bar"></span><span><b>Bar</b> -- shelf life left (Model 3, the most perishable product). Green &gt; 50 %, amber 20-50 %, red &lt; 20 %.</span></li>
+            <li><span class="sw sw-red"></span><span><b>Fast red double flash</b> -- device alarm: temperature more than 3 °C off, changing fast, or door open over 60 s.</span></li>
+            <li><span class="sw sw-purple"></span><span><b>Purple double flash</b> -- the server's AI raised an alert in the last 10 min. Read the explanation above.</span></li>
+            <li><span class="sw sw-amber"></span><span><b>Amber double flash</b> -- door open.</span></li>
+            <li><span class="sw sw-blue"></span><span><b>Blue breathing</b> -- waiting for the phone (Bluetooth not connected). <b>Blue scanner</b> -- AC auto-pairing running.</span></li>
+            <li><span class="sw sw-green"></span><span><b>Green / amber breathing</b> -- connected, no shipment data yet: temperature in range / drifting.</span></li>
+            <li><span class="sw sw-white"></span><span><b>Quick flashes</b> -- green x2 phone connected, white x2 command received, green x3 / red x3 AC paired / no match.</span></li>
+            <li><span class="sw sw-rainbow"></span><span><b>Rainbow</b> -- "identify" from this phone: it's the box you're connected to.</span></li>
+          </ul>
+        </details>
+      </div>
+
       <button id="reconnect-btn" class="secondary">Reconnect Bluetooth</button>
       <button id="end-shipment-btn" class="danger">Mark delivered / end shipment</button>
       <p class="error" id="dashboard-error"></p>
@@ -166,8 +185,76 @@ export function renderDashboard(ctx) {
     stopWatching();
   });
 
+  // ---------- Device light strip: forward the backend's view over BLE ----------
+  // The ESP can't compute shelf life or see the server's alerts on its own (the product data
+  // and the models live on the backend), so after every AI refresh the phone tells it: shelf
+  // life LEFT (Model 3, worst product for a mixed load) and the newest backend alert of the last
+  // 10 minutes. The firmware turns that into the bar / purple flashes and stops showing it if the
+  // phone goes quiet for 2 minutes (frostmind_main.ino, PHONE_STATUS_STALE_MS).
+  const ALERT_WINDOW_MS = 10 * 60 * 1000;
+  const stripNowEl = node.querySelector("#strip-now");
+  const stripSentEl = node.querySelector("#strip-sent");
+  let ledStatus = null; // last {cmd:"led", shelf, alert} built from the AI feed
+  let lastReading = null;
+
+  function ledStatusFrom(live) {
+    const frac = live.shipment.shelf_life_consumed_fraction;
+    const recent = live.alerts.filter((a) => Date.now() - new Date(a.ts).getTime() < ALERT_WINDOW_MS);
+    const alert = recent.some((a) => a.severity === "critical" || a.severity === "high") ? "critical" : recent.length ? "warning" : "none";
+    return { cmd: "led", shelf: frac == null ? -1 : Math.max(0, Math.round(100 - frac * 100)), alert };
+  }
+
+  async function sendLedStatus() {
+    if (!ledStatus) return;
+    if (!ctx.ble.connected) {
+      stripSentEl.textContent = "not sent -- Bluetooth disconnected";
+      renderStripNow();
+      return;
+    }
+    try {
+      await ctx.ble.sendCommand(ledStatus);
+      stripSentEl.textContent = `sent ${new Date().toLocaleTimeString()}`;
+    } catch (err) {
+      stripSentEl.textContent = `not sent: ${err.message.slice(0, 60)}`; // the next refresh retries
+    }
+    renderStripNow();
+  }
+
+  // Mirrors the firmware's priority order (drawLiveStatus), so the driver can check the box
+  // shows what the phone thinks it should.
+  function renderStripNow() {
+    if (!ctx.ble.connected) {
+      stripNowEl.textContent = "blue breathing -- waiting for this phone to reconnect";
+      return;
+    }
+    let base;
+    if (ledStatus && ledStatus.shelf >= 0) {
+      const colour = ledStatus.shelf > 50 ? "green" : ledStatus.shelf > 20 ? "amber" : "red";
+      base = ledStatus.shelf > 0 ? `${colour} bar, ${ledStatus.shelf}% shelf life left` : "whole strip dim red, shelf life used up";
+    } else {
+      base = "green/amber breathing -- temperature vs setpoint (no shelf-life data yet)";
+    }
+    let overlay = "";
+    if (lastReading?.alert) overlay = " + fast red flashes (device alarm)";
+    else if (ledStatus && ledStatus.alert !== "none") overlay = " + purple flashes (AI alert)";
+    else if (lastReading?.door) overlay = " + amber flashes (door open)";
+    stripNowEl.textContent = base + overlay;
+  }
+
+  node.querySelector("#identify-btn").addEventListener("click", async () => {
+    errorEl.textContent = "";
+    try {
+      await ctx.ble.sendCommand({ cmd: "identify" });
+    } catch (err) {
+      errorEl.textContent = `Couldn't reach the device: ${err.message}`;
+    }
+  });
+  renderStripNow();
+
   const onReading = (event) => {
     const r = event.detail;
+    lastReading = r;
+    renderStripNow();
     tempEl.textContent = `${r.temp?.toFixed?.(1) ?? r.temp} C`;
     humEl.textContent = r.hum != null ? `${r.hum}%` : "-";
     doorEl.textContent = r.door ? "open" : "closed";
@@ -184,9 +271,11 @@ export function renderDashboard(ctx) {
   };
   const onConnected = () => {
     bleStatusEl.textContent = "connected";
+    sendLedStatus();
   };
   const onDisconnected = () => {
     bleStatusEl.textContent = "disconnected -- reconnecting...";
+    renderStripNow();
   };
   const onReconnecting = (event) => {
     const { attempt, delayMs } = event.detail;
@@ -194,6 +283,7 @@ export function renderDashboard(ctx) {
   };
   const onReconnected = () => {
     bleStatusEl.textContent = "connected";
+    sendLedStatus();
   };
   const onReconnectFailed = (event) => {
     bleStatusEl.textContent = `reconnect failed, retrying... (attempt ${event.detail.attempt})`;
@@ -326,7 +416,10 @@ export function renderDashboard(ctx) {
   async function refreshLive() {
     if (!ctx.shipment?.id || !ctx.device?.provisioning_key) return;
     try {
-      renderLive(await api.live(ctx.shipment.id, ctx.device.provisioning_key));
+      const live = await api.live(ctx.shipment.id, ctx.device.provisioning_key);
+      renderLive(live);
+      ledStatus = ledStatusFrom(live);
+      sendLedStatus();
     } catch (err) {
       aiUpdatedEl.textContent = `AI feed unavailable: ${err.status || ""} ${err.message.slice(0, 80)}`;
     }

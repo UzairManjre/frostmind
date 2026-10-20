@@ -567,6 +567,11 @@ export function renderConfirmLiveData(ctx) {
         <div class="tile"><span class="tile-label">Readings seen</span><span class="tile-value" id="live-count">0</span></div>
       </div>
 
+      <p class="hint">Readings arriving prove device &rarr; phone. To check phone &rarr; device too,
+      flash the box's light strip: it should play a rainbow for 5 s.</p>
+      <button id="identify-btn" class="secondary">Flash the device's lights</button>
+      <p class="status" id="identify-status"></p>
+
       <button id="continue-btn" disabled>Continue (waiting for data...)</button>
     </section>
   `);
@@ -599,6 +604,16 @@ export function renderConfirmLiveData(ctx) {
   ctx.cleanupHandlers.push(() => ctx.ble.removeEventListener("reading", onReading));
 
   continueBtn.addEventListener("click", () => ctx.goToStep(6));
+
+  const identifyStatusEl = node.querySelector("#identify-status");
+  node.querySelector("#identify-btn").addEventListener("click", async () => {
+    try {
+      await ctx.ble.sendCommand({ cmd: "identify" });
+      identifyStatusEl.textContent = "Sent -- the strip should be cycling through the rainbow now.";
+    } catch (err) {
+      identifyStatusEl.textContent = `Couldn't reach the device: ${err.message}`;
+    }
+  });
 
   mount(node);
 }

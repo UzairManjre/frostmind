@@ -621,3 +621,22 @@ button.cart-remove:hover { color: var(--danger); border-color: var(--danger); }
 .alert-msg { margin: 0.3rem 0; font-size: 0.82rem; color: var(--text-dim); }
 .ai-text { margin: 0.35rem 0 0.2rem; font-size: 0.9rem; color: var(--text); }
 .ai-action { margin: 0; font-size: 0.86rem; color: var(--peri-200); }
+
+/* ---------- Device light strip panel (dashboard) ---------- */
+.strip-panel { border-color: rgba(160, 175, 255, 0.25); background: rgba(5, 7, 26, 0.45); }
+.strip-now { margin: 0 0 0.8rem; font-size: 0.88rem; color: var(--text-dim); }
+.strip-now strong { color: var(--text); font-weight: 500; }
+.strip-panel details { margin-bottom: 0; }
+.legend { list-style: none; margin: 0; padding: 0; }
+.legend li { display: grid; grid-template-columns: 1.6rem 1fr; gap: 0.5rem; align-items: start; padding: 0.35rem 0; font-size: 0.84rem; color: var(--text-dim); border-bottom: 1px solid var(--line); }
+.legend li:last-child { border-bottom: 0; }
+.legend b { color: var(--text); font-weight: 500; }
+.sw { display: inline-block; width: 1.3rem; height: 0.55rem; margin-top: 0.35rem; border-radius: 999px; }
+.sw-bar { background: linear-gradient(90deg, #39d98a 0 55%, rgba(160, 175, 255, 0.14) 55%); }
+.sw-red { background: #ff3b4e; }
+.sw-purple { background: #b04dff; }
+.sw-amber { background: #ffa62b; }
+.sw-blue { background: #3b6bff; }
+.sw-green { background: #39d98a; }
+.sw-white { background: #f4f5ff; }
+.sw-rainbow { background: linear-gradient(90deg, #ff3b4e, #ffa62b, #39d98a, #3b6bff, #b04dff); }

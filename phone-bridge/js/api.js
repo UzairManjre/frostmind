@@ -4,6 +4,15 @@
 
 import { getApiBase } from "./config.js";
 
+// The backend stores UTC datetimes but SQLite drops the tzinfo, so they arrive as naive ISO
+// strings ("2026-10-18T10:41:03.176266"). `new Date()` would read those as *local* time (5.5 h
+// off in India), so mark them as UTC on the way in -- same fix as web/src/lib/api.ts.
+const NAIVE_ISO_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$/;
+
+function utcReviver(_key, value) {
+  return typeof value === "string" && NAIVE_ISO_DATETIME.test(value) ? `${value}Z` : value;
+}
+
 async function request(path, options = {}) {
   const base = getApiBase();
   const res = await fetch(`${base}${path}`, {
@@ -31,7 +40,7 @@ async function request(path, options = {}) {
   }
   const contentType = res.headers.get("content-type") || "";
   if (contentType.includes("application/json")) {
-    return res.json();
+    return JSON.parse(await res.text(), utcReviver);
   }
   return res.text();
 }

@@ -87,7 +87,10 @@ semantics -- verify against that, not this mirror, if the two ever disagree.
 Device -> phone, pairing status: `{"type":"pairing_status","state":"scanning|matched|no_match|idle","candidate_index":<int>,"total":<int>}`
 
 Phone -> device commands: `set_category`, `start_pairing`, `pairing_status`, `manual_pair` (with
-`index`), `manual_confirm`. See `js/config.js` and `js/wizard.js` for exact usage.
+`index`), `manual_confirm`, `led` (light-strip status: `shelf` % left + `alert` level, sent by
+the dashboard after every AI refresh) and `identify` (5 s rainbow on the box's light strip; the
+dashboard and wizard step 5 have a button for it). See `js/config.js`, `js/wizard.js` and
+`js/dashboard.js` for exact usage. `js/ble.js` queues commands so two never overlap on the link.
 
 `js/ble.js` handles BLE's link-layer chunking in both directions: incoming notifications are
 buffered across `characteristicvaluechanged` events until a full `\n`-terminated line is

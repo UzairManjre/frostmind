@@ -8,7 +8,8 @@ Shows every sensor reading as a readable row (temperature, humidity, door, rate 
 every firmware message as it happens. Keys are sent straight to the firmware:
 
     x  IR LED test (3 s flashing -- watch the LED through a phone camera)
-    w  where's my LED? (flashes GPIO6, then GPIO5, 3 s each; the console says which is active)
+    g  light strip colour test (red, green, blue, white -- 1 s each; first must be red for GRB)
+    d  light strip demo (every status pattern, 4 s each, its meaning printed here)
     p  power toggle   +/-  AC temp up/down   f  fan   a  auto-pair   l  list protocols
     q  quit the console (the ESP keeps running)
 
@@ -34,7 +35,7 @@ RESET, DIM, BOLD = "\033[0m", "\033[2m", "\033[1m"
 CYAN, GREEN, YELLOW, RED, MAGENTA = "\033[36m", "\033[32m", "\033[33m", "\033[31m", "\033[35m"
 
 HELP = (
-    f"{BOLD}keys:{RESET} {CYAN}x{RESET} LED test   {CYAN}w{RESET} find LED pin   "
+    f"{BOLD}keys:{RESET} {CYAN}x{RESET} IR LED test   {CYAN}g{RESET} strip colours   {CYAN}d{RESET} strip demo   "
     f"{CYAN}p{RESET} power   {CYAN}+/-{RESET} temp   {CYAN}f{RESET} fan   {CYAN}a{RESET} auto-pair   "
     f"{CYAN}l{RESET} list   {CYAN}q{RESET} quit"
 )
@@ -130,8 +131,8 @@ def main():
                     ch = "\n"
                 if ch == "x":
                     print(f"{MAGENTA}{BOLD}>>> sending x: LED should flash for 3 s -- check with your phone camera{RESET}")
-                elif ch == "w":
-                    print(f"{MAGENTA}{BOLD}>>> sending w: watch the camera -- the console will say which pin is flashing{RESET}")
+                elif ch == "g":
+                    print(f"{MAGENTA}{BOLD}>>> sending g: strip should show RED, GREEN, BLUE, WHITE for 1 s each{RESET}")
                 elif ch == "h":
                     print(HELP)
                     continue

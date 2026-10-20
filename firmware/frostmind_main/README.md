@@ -19,7 +19,7 @@ algorithm) / §6 Phase A for the design this implements.
 | DHT11/DHT22 DATA | GPIO7 | single-wire, `FROSTMIND_DHT_TYPE` selects which (moved from GPIO8 to match the rebuilt board) |
 | MC-38 reed switch | GPIO5 (moved from GPIO4 to match the rebuilt board) | `INPUT_PULLUP`, **HIGH = door open** (corrected after real-hardware testing showed the original LOW=open assumption was backwards -- see `loop()`'s comment in the .ino) |
 | IR transmitter (LED driver) | GPIO6 | transmit-only, no IR receiver in this build |
-| (free) | GPIO4 | the original reed-switch pin; unused now |
+| WS2812/WS281x RGB light strip DIN | GPIO4 | status lights, **GRB** colour order; strip 5V -> board 5V, GND -> GND (the original reed-switch pin, reused) -- see "Status light strip" below |
 | (free) | GPIO8, GPIO9 | GPIO8 was the original DHT pin; GPIO9 was SCL back when this used an I2C SHT31-D |
 
 The sensor actually on hand has 3 pins (VCC/GND/DATA), which is a
@@ -43,6 +43,7 @@ Manager):
 - `IRremoteESP8266` (already installed in this project's sketchbook, v2.9.0)
 - `ArduinoJson` (v7.x — this sketch uses the v7 `JsonDocument` API)
 - BLE: **none to install** — see "BLE library" below.
+- Light strip: **none to install** — driven through the esp32 core's own RMT API (`rmtInit`/`rmtWrite`), the same calls the core's `rgbLedWrite()` uses.
 
 ## BLE library: which one, and why
 
@@ -195,6 +196,8 @@ Sent whenever pairing state changes, and immediately in reply to a
 {"cmd":"pairing_status"}
 {"cmd":"manual_pair","index":<int>}
 {"cmd":"manual_confirm"}
+{"cmd":"led","shelf":<0-100, % shelf life LEFT; -1 = unknown>,"alert":"none|warning|critical"}
+{"cmd":"identify"}
 ```
 
 - `set_category`: sets the alert setpoint used by the threshold rule
@@ -210,6 +213,13 @@ Sent whenever pairing state changes, and immediately in reply to a
   in-progress automatic sweep.
 - `manual_confirm`: persists the currently-selected manual candidate to NVS
   (the BLE equivalent of the serial `y` key) — marks pairing as `matched`.
+- `led`: what the light strip should show from the backend, sent by the phone dashboard after
+  every AI refresh (~10 s): Model 3 shelf life **left** (the most perishable product, for a mixed
+  load) and the newest backend alert of the last 10 minutes (`critical` = high/critical severity,
+  `warning` = anything else). Not stored; the strip stops showing it if no update arrives for
+  `PHONE_STATUS_STALE_MS` (2 min).
+- `identify`: plays a 5 s rainbow on the light strip, so the driver can see which box the phone
+  is connected to (also proves the phone → device direction works).
 
 Category → default alert setpoint (used only by the on-device threshold
 rule; the authoritative Arrhenius shelf-life math lives in
@@ -228,7 +238,7 @@ If no category has been set, `DEFAULT_SETPOINT_C` (4.0°C) is used.
 
 ## Serial command set (manual-fallback pairing flow)
 
-Bench-test keys: `x` = IR LED test (3 s flashing, view through a phone's front camera). Live console with these keys: `.venv\Scripts\python.exe scripts\esp_console.py`.
+Bench-test keys: `x` = IR LED test (3 s flashing, view through a phone's front camera), `g` = light strip colour test (red, green, blue, white, 1 s each), `d` = light strip demo (every pattern, 4 s each, its meaning printed). Live console with these keys: `.venv\Scripts\python.exe scripts\esp_console.py`.
 
 
 Same key bindings as `frostmind_brand_select_ir.ino`, adapted into this
@@ -250,6 +260,48 @@ on the same underlying state):
 
 CSV sensor log (see below) prints continuously over the same serial
 connection regardless of which pairing mode is active.
+
+## Status light strip (WS2812 / WS281x, GRB)
+
+An RGB strip on GPIO4 shows the device's state at a glance, so nobody needs to open the phone to
+see that something is wrong. `STATUS_LED_COUNT` (default 8) is the number of LEDs used; any
+beyond it stay dark. `STATUS_LED_BRIGHTNESS` (default 40/255) caps every channel, which keeps 8
+LEDs at full white to about 75 mA, so USB power is enough.
+
+**Wiring:** strip **5V** → board **5V** pin, **GND** → **GND**, **DIN** → **GPIO4**. Connect to the
+strip's *input* end: the small arrows printed on the strip point away from it, and the pad says
+`DIN` (not `DO`/`DOUT`). A 300-500 Ω resistor in series on DIN is good practice but not required
+for a short wire.
+
+What it shows, highest priority first (the same order as `drawLiveStatus()` in the `.ino`):
+
+| Pattern | Meaning |
+|---|---|
+| Cyan sweep, once | booted and ready |
+| 2 green flashes | phone connected over Bluetooth |
+| 2 white flashes | a command from the phone was received (e.g. `set_category`) |
+| 3 green / 3 red flashes | AC auto-pairing matched / no match |
+| Rainbow, 5 s | `identify` from the phone: this is the box you're connected to |
+| **Fast red double flash** (every 1 s) | device alarm: the same rule that fires the IR intervention. Temperature >3 °C off the category setpoint, changing >3 °C/min, or door open >60 s |
+| **Purple double flash** (every 2 s; every 1 s if critical) | the backend's AI raised an alert in the last 10 min (e.g. drift from Model 4's setpoint, shelf-life threshold). The explanation is on the phone |
+| **Amber double flash** (every 2 s) | door open (not yet an alarm) |
+| Blue scanner over a dim fill | AC auto-pairing running; the fill shows progress through the candidates |
+| Blue breathing | waiting for the phone (Bluetooth not connected) |
+| **Bar** | shipment running: lit LEDs = Model 3 shelf life **left**. Green >50 %, amber 20-50 %, red <20 %. Whole strip dim red = used up. The tip breathes |
+| Green / amber breathing | connected, no shipment data yet: temperature within 1.5 °C of the setpoint / 1.5-3 °C off |
+| Dim white breathing | no sensor reading yet |
+
+The alarm flashes take only the last 600 ms of each cycle, so the bar underneath stays readable:
+"green bar + purple flashes" reads as "plenty of shelf life left, but the AI has flagged
+something".
+
+Shelf life and the backend alert come from the phone (`{"cmd":"led",...}`). The device can't
+compute them itself because the product data and the models live on the server. Everything else
+is the device's own state, so the strip still works without a phone.
+
+Bench checks:
+- `g`: red, green, blue, white for 1 s each. If the first colour isn't red, the strip isn't GRB.
+- `d`: every pattern above, 4 s each, with its meaning printed to Serial. Good for a demo.
 
 ## Threshold-rule alert logic (Model 1, Stage 1 — MVP plan §4)
 
