@@ -295,7 +295,7 @@ What it shows, highest priority first (the same order as `drawLiveStatus()` in t
 | **Ripple**: one ring of light running outward | a command from the phone arrived (e.g. `set_category`) |
 | **Mint sweep** / **shake** (a coral light shaking side to side, like a wrong password) | AC auto-pairing matched / no match |
 | **Spectrum**: the hue circle turning along the strip, a white glint passing through, 5 s | `identify` from the phone: this is the box you're connected to |
-| **Coral heartbeat** (lub-dub, about once a second) | device alarm: the same rule that fires the IR intervention. Temperature >3 °C off the category setpoint, changing >3 °C/min, or door open >60 s |
+| **Coral alarm**: the whole strip turns coral, beats like a heart for 8 s (`ALARM_URGENT_MS`), then breathes slowly for as long as it lasts | device alarm: the same rule that fires the IR intervention. Temperature >3 °C off the category setpoint, changing >3 °C/min, or door open >60 s |
 | **Blue-violet-pink wave** flowing along the strip every 4 s (2.6 s if critical) | the backend's AI raised an alert in the last 10 min (e.g. drift from Model 4's setpoint, shelf-life threshold). The explanation is on the phone |
 | **Amber light spilling in from both ends** | door open (not yet an alarm) |
 | **Ice comet** sweeping end to end over a faint fill | AC auto-pairing running; the fill shows progress through the candidates |
@@ -304,7 +304,8 @@ What it shows, highest priority first (the same order as `drawLiveStatus()` in t
 | **Thermal aura**: a slowly drifting two-tone glow | connected, no shipment data yet. Mint/ice = on target, warming to amber as it drifts, coral past the alarm threshold |
 | Small warm glow | no sensor reading yet |
 
-The three alerts are blended over the scene, so the bar underneath stays readable: "mint bar +
+A device alarm takes the whole strip (it never flips back to the scene underneath). The AI wave
+and the door light are blended over the scene, so the bar underneath stays readable: "mint bar +
 an AI wave every few seconds" reads as "plenty of shelf life left, but the AI has flagged
 something".
 

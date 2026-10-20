@@ -6,7 +6,7 @@
 // new file instead of serving a 404/opaque error for it out of a v1 cache that never knew it
 // existed.
 // v3: UI redesign (new css/style.css + index.html markup).
-const CACHE_NAME = "frostmind-bridge-v8";
+const CACHE_NAME = "frostmind-bridge-v9";
 const APP_SHELL = [
   "./",
   "./index.html",

@@ -104,6 +104,7 @@ static const int STATUS_LED_COUNT = 11;               // LEDs on the strip (ours
 static const uint8_t STATUS_LED_BRIGHTNESS = 80;      // 0-255 cap after gamma; the looks are mostly deep colours, so 11 LEDs stay well under 200 mA on USB 5V
 static const unsigned long STATUS_LED_FRAME_MS = 16;  // ~60 fps: what makes motion read as gliding rather than stepping
 static const unsigned long LED_CROSSFADE_MS = 450;    // every change of scene dissolves over this long instead of cutting
+static const unsigned long ALARM_URGENT_MS = 8000;    // a new device alarm beats like a heart this long, then settles into a slow breath
 static const unsigned long PHONE_STATUS_STALE_MS = 2UL * 60UL * 1000UL; // phone re-sends shelf life/alerts every ~10 s; older than this isn't shown
 static const float TEMP_DRIFT_WARN_C = 1.5f;          // the thermal aura warms from mint toward amber past this; coral past the 3 C alarm
 static const unsigned long LED_DEMO_STEP_MS = 4500;   // serial 'd': how long each look of the demo is shown
@@ -274,6 +275,7 @@ bool phoneStatusSeen = false;
 
 // The device's own view, refreshed every sensor sample in loop().
 bool ledLocalAlert = false;      // same tempAlert || doorAlert that fires the IR intervention
+unsigned long ledAlarmSinceMs = 0; // when the current alarm started
 bool ledTempValid = false;
 float ledTempDeviationC = 0.0f;  // temp - category setpoint
 
@@ -633,10 +635,12 @@ void logCsvRow(unsigned long nowMs, float tempC, float humidity, bool doorIsOpen
 //   1. Moments (about a second, then back): boot "frost bloom", phone
 //      "handshake", command "ripple", AC pairing "success sweep" or "shake",
 //      identify "spectrum".
-//   2. Alerts, blended over the scene so it stays readable underneath: coral
-//      heartbeat = device alarm; a blue-violet-pink wave = the backend's AI
-//      raised an alert; amber light spilling in from both ends = door open.
-//   3. The scene: pairing comet; waiting-for-phone beacon; the shelf-life bar
+//   2. Device alarm: the whole strip turns coral -- a heartbeat at first, then a
+//      slow steady breath for as long as the alarm lasts.
+//   3. Alerts blended over the scene so it stays readable underneath: a
+//      blue-violet-pink wave = the backend's AI raised an alert; amber light
+//      spilling in from both ends = door open.
+//   4. The scene: pairing comet; waiting-for-phone beacon; the shelf-life bar
 //      (colour slides mint -> lime -> amber -> coral as it drains, a sheen runs
 //      along it); otherwise a thermal aura (mint/ice on target, warming to
 //      amber as it drifts, coral when out of range).
@@ -816,13 +820,19 @@ static inline float beatPulse(float t) { // fast attack, soft decay
   return expf(-(t - 0.05f) / 0.13f);
 }
 
-// Device alarm: a coral heartbeat, lub-dub, about once a second, strongest at the centre.
-void overlayHeartbeat(unsigned long now) {
+// Device alarm: the whole strip turns coral and stays coral -- it never drops back to the scene
+// underneath, so it can't read as flickering between two things. For the first ALARM_URGENT_MS
+// it beats like a heart (lub-dub) to get attention, then settles into a slow, steady breath:
+// still unmistakably an alarm, but it doesn't strobe for hours on a box that's been warm all day.
+void sceneAlarm(unsigned long sinceMs, unsigned long now) {
   float t = (float)(now % 1100) / 1000.0f;
-  float env = clamp01(beatPulse(t) + 0.75f * beatPulse(t - 0.24f));
+  float heart = 0.35f + 0.65f * clamp01(beatPulse(t) + 0.75f * beatPulse(t - 0.24f));
+  float breath = 0.35f + 0.35f * wave01(now, 3200);
+  float level = heart + (breath - heart) * smooth01(((float)sinceMs - ALARM_URGENT_MS) / 1500.0f);
   for (int p = 0; p < STATUS_LED_COUNT; p++) {
-    float a = env * (0.7f + 0.3f * glowAt(p, LED_MID, STATUS_LED_COUNT * 0.35f));
-    ledScene[p] = mixCol(ledScene[p], hexCol(PAL_CORAL), a);
+    float centre = glowAt(p, LED_MID, STATUS_LED_COUNT * 0.4f);
+    Col c = mixCol(hexCol(PAL_AMBER), hexCol(PAL_CORAL), 0.8f + 0.2f * centre); // a touch warmer at the ends
+    ledScene[p] = scaleCol(c, level * (0.8f + 0.2f * centre));
   }
 }
 
@@ -962,6 +972,9 @@ int drawLiveStatus(unsigned long nowMs) {
     float progress = (numCandidates > 0 && pairingCandidateIdx >= 0) ? (float)(pairingCandidateIdx + 1) / numCandidates : 0.0f;
     scenePairingComet(progress, nowMs);
     key = 1;
+  } else if (ledLocalAlert) {
+    sceneAlarm(nowMs - ledAlarmSinceMs, nowMs);
+    return 6; // the alarm owns the whole strip: no other alert on top
   } else if (!bleDeviceConnected) {
     sceneBeacon(nowMs);
     key = 2;
@@ -976,11 +989,9 @@ int drawLiveStatus(unsigned long nowMs) {
     key = 5;
   }
 
-  // Alerts: the device's own rule first, then the backend's AI, then a door that's open but not
-  // yet open long enough to be an alarm.
-  if (ledLocalAlert) {
-    overlayHeartbeat(nowMs);
-  } else if (phoneStatusFresh(nowMs) && phoneAlertLevel > 0) {
+  // Alerts blended over the scene: the backend's AI first, then a door that's open but not yet
+  // open long enough to be an alarm. (A device alarm already took the whole strip above.)
+  if (phoneStatusFresh(nowMs) && phoneAlertLevel > 0) {
     overlayIntelligence(phoneAlertLevel >= 2, nowMs);
   } else if (doorOpen) {
     overlayDoorSpill(nowMs);
@@ -1001,7 +1012,7 @@ static const char *const kLedDemoSteps[] = {
   "Shelf-life bar, 12% left -- coral: nearly used up",
   "Amber light spilling in from both ends -- door open",
   "Blue-violet-pink wave -- the server's AI raised an alert: read it on the phone",
-  "Coral heartbeat -- device alarm (temperature >3 C off, changing fast, or door open >60 s)",
+  "Coral alarm -- whole strip, heartbeat for 8 s then a slow breath (temperature >3 C off, changing fast, or door open >60 s)",
   "Ice comet -- AC auto-pairing running (the faint fill is progress)",
   "Mint sweep -- AC paired",
   "Shake -- AC pairing found no match",
@@ -1035,7 +1046,7 @@ int drawLedDemo(unsigned long nowMs) {
     case 8: sceneShelfBar(12, nowMs); break;
     case 9: sceneShelfBar(85, nowMs); overlayDoorSpill(nowMs); break;
     case 10: sceneShelfBar(85, nowMs); overlayIntelligence(true, nowMs); break;
-    case 11: sceneShelfBar(85, nowMs); overlayHeartbeat(nowMs); break;
+    case 11: sceneAlarm(st, nowMs); break;
     case 12: scenePairingComet((float)st / LED_DEMO_STEP_MS, nowMs); break;
     case 13: renderMoment(LE_PAIR_MATCHED, st % 2200); break;
     case 14: renderMoment(LE_PAIR_NO_MATCH, st % 1600); break;
@@ -1614,6 +1625,7 @@ void loop() {
   unsigned long doorOpenDurationMs = doorOpen ? (now - doorOpenSinceMs) : 0;
   bool doorAlert = doorOpen && (doorOpenDurationMs > DOOR_OPEN_ALERT_THRESH_MS);
   bool alertNow = tempAlert || doorAlert;
+  if (alertNow && !ledLocalAlert) ledAlarmSinceMs = now;
   ledLocalAlert = alertNow;
   ledTempValid = tempValid;
   ledTempDeviationC = tempValid ? (tempC - setpoint) : 0.0f;

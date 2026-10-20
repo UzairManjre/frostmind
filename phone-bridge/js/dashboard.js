@@ -75,7 +75,7 @@ export function renderDashboard(ctx) {
           <summary>What the lights mean</summary>
           <ul class="legend">
             <li><span class="sw sw-bar"></span><span><b>Shelf-life bar</b> -- length = shelf life left (Model 3, the most perishable product). The colour slides mint &rarr; lime &rarr; amber &rarr; coral as it drains; a sheen runs along it.</span></li>
-            <li><span class="sw sw-red"></span><span><b>Coral heartbeat</b> -- device alarm: temperature more than 3 °C off, changing fast, or door open over 60 s.</span></li>
+            <li><span class="sw sw-red"></span><span><b>Whole strip coral</b> -- device alarm: temperature more than 3 °C off, changing fast, or door open over 60 s. It beats like a heart for a few seconds, then breathes slowly while the alarm lasts.</span></li>
             <li><span class="sw sw-ai"></span><span><b>Blue-violet-pink wave</b> -- the server's AI raised an alert in the last 10 min. Read the explanation above.</span></li>
             <li><span class="sw sw-amber"></span><span><b>Amber light from both ends</b> -- door open.</span></li>
             <li><span class="sw sw-blue"></span><span><b>Blue beacon breathing at the centre</b> -- waiting for the phone. <b>Ice comet sweeping</b> -- AC auto-pairing.</span></li>
@@ -234,9 +234,12 @@ export function renderDashboard(ctx) {
     } else {
       base = "mint/amber aura -- temperature vs setpoint (no shelf-life data yet)";
     }
+    if (lastReading?.alert) {
+      stripNowEl.textContent = "whole strip coral -- device alarm";
+      return;
+    }
     let overlay = "";
-    if (lastReading?.alert) overlay = " + coral heartbeat (device alarm)";
-    else if (ledStatus && ledStatus.alert !== "none") overlay = " + blue-violet-pink AI wave";
+    if (ledStatus && ledStatus.alert !== "none") overlay = " + blue-violet-pink AI wave";
     else if (lastReading?.door) overlay = " + amber light from both ends (door open)";
     stripNowEl.textContent = base + overlay;
   }
