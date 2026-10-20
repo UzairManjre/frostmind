@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models import AlertSeverity, AlertType, PairingState, ProductCategory, ShipmentStatus
 
@@ -106,11 +106,26 @@ class TruckOut(BaseModel):
 # ---------- Shipment ----------
 
 
+class ShipmentProductIn(BaseModel):
+    product_id: str
+    quantity_kg: float = Field(default=1.0, gt=0)
+
+
 class ShipmentCreateRequest(BaseModel):
     truck_id: str
-    category: ProductCategory
+    # Either a single classic category, or a mixed load of catalog products (Load Planner). With
+    # products, the backend checks they can share one compartment (Model 5 + policy), stores
+    # Model 4's recommended setpoint, and derives `category` from the heaviest product.
+    category: ProductCategory | None = None
+    products: list[ShipmentProductIn] | None = Field(default=None, max_length=40)
     label: str | None = None
     status: ShipmentStatus = ShipmentStatus.pending
+
+    @model_validator(mode="after")
+    def _category_or_products(self):
+        if self.category is None and not self.products:
+            raise ValueError("Give either a category or a non-empty list of products.")
+        return self
 
 
 class ShipmentUpdateRequest(BaseModel):
@@ -139,6 +154,19 @@ class ShipmentOut(BaseModel):
     shelf_life_updated_at: datetime | None
     alert_rate_threshold_override: float | None
     alert_deviation_threshold_override: float | None
+    # Mixed load (null for a single-category shipment)
+    products: list[dict] | None = None
+    recommended_setpoint_c: float | None = None
+    setpoint_band: list[float] | None = None
+    setpoint_method: str | None = None
+    product_shelf_life: list[dict] | None = None
+
+
+class ShipmentCreatedOut(ShipmentOut):
+    # Only on POST /shipments: what the phone should tell the ESP (set_category), and whether
+    # that preset is actually close to the recommended setpoint.
+    device_category: str | None = None
+    device_category_within_1c: bool | None = None
 
 
 class FleetShipmentOut(ShipmentOut):
@@ -262,3 +290,99 @@ class ComplianceReportOut(BaseModel):
     narrative: str | None  # None means generation failed (Ollama unreachable/timeout/malformed
     # output) -- see app/llm_orchestrator.py's reliability contract; the admin UI must show this
     # as "couldn't generate right now, try again" and never fabricate a narrative client-side.
+
+
+# ---------- Load Planner (Model 4 + Model 5) ----------
+
+
+class ProductOut(BaseModel):
+    product_id: str
+    name: str
+    category: str
+    safety_class: str
+    frostmind_category: str
+    t_min_c: float | None
+    t_max_c: float | None
+    t_opt_c: float | None
+    rh_min: float | None
+    rh_max: float | None
+    chilling_sensitive: bool
+    ethylene_production: int
+    ethylene_sensitivity: int
+    compat_groups: str
+    source: str
+
+
+class PlanItemIn(BaseModel):
+    product_id: str
+    quantity_kg: float = Field(default=1.0, gt=0)
+
+
+class PlanRequest(BaseModel):
+    products: list[PlanItemIn] = Field(min_length=1, max_length=40)
+    truck_id: str | None = None
+    # Explicit reefer fluctuation override (deg C); otherwise taken from the truck's own recent
+    # readings, otherwise the real-data default (data/product_catalog/reefer_fluctuation.json).
+    sigma_c: float | None = Field(default=None, ge=0.0, le=5.0)
+
+
+class PlanPairOut(BaseModel):
+    a: str
+    b: str
+    probability: float | None
+    compatible: bool
+    extrapolated: bool
+    vetoes: list[str]
+    reasons: list[str]
+    warnings: list[str]
+
+
+class PlanGroupProductOut(BaseModel):
+    product_id: str
+    name: str
+    quantity_kg: float
+    expected_loss_pct_per_day: float
+
+
+class PlanGroupOut(BaseModel):
+    group_id: int
+    products: list[PlanGroupProductOut]
+    feasible: bool
+    recommended_setpoint_c: float | None
+    method: str  # "ml" | "physics" | "physics_fallback" | "infeasible"
+    physics_setpoint_c: float
+    student_setpoint_c: float | None
+    safe_range_c: list[float | None]
+    band_c: list[float]
+    expected_loss_pct_per_day: float
+    device_category: str
+    device_category_setpoint_c: float
+    device_category_within_1c: bool
+
+
+class PlanResponse(BaseModel):
+    sigma_c: float
+    sigma_source: str
+    model4_active: bool
+    model5_active: bool
+    compatibility_threshold: float | None
+    groups: list[PlanGroupOut]
+    pairs: list[PlanPairOut]
+    warnings: list[str]
+
+
+# ---------- Phone live view (device-key auth) ----------
+
+
+class LiveReadingOut(BaseModel):
+    ts: datetime
+    temp_c: float
+    humidity: float | None
+    door_open: bool | None
+
+
+class LiveShipmentOut(BaseModel):
+    shipment: ShipmentOut
+    latest_reading: LiveReadingOut | None
+    alerts: list[AlertOut]
+    ai: dict

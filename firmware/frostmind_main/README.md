@@ -14,13 +14,17 @@ algorithm) / §6 Phase A for the design this implements.
 
 ## Wiring
 
-| Signal | ESP32-S3 pin | Notes |
-|---|---|---|
-| DHT11/DHT22 DATA | GPIO8 | single-wire, `FROSTMIND_DHT_TYPE` selects which |
-| MC-38 reed switch | GPIO4 | `INPUT_PULLUP`, **HIGH = door open** (corrected after real-hardware testing showed the original LOW=open assumption was backwards -- see `loop()`'s comment in the .ino) |
-| IR transmitter (LED driver) | GPIO6 | transmit-only, no IR receiver in this build |
-| (reserved) | GPIO5 | unused — for a TSOP38238 if one gets sourced later |
-| (free) | GPIO9 | was SCL back when this used an I2C SHT31-D; unused now |
+**Board: Seeed XIAO ESP32-S3.** Wire by the **D-label** printed next to each hole. On this board
+D*n* is **not** GPIO *n* (D6 is GPIO43, for example), and the XIAO ESP32-C3 pinout looks
+identical but maps differently, so don't use that one.
+
+| Signal | XIAO pad | ESP32-S3 pin | Notes |
+|---|---|---|---|
+| DHT11/DHT22 DATA | **D8** | GPIO7 | single-wire, `FROSTMIND_DHT_TYPE` selects which (moved from GPIO8 to match the rebuilt board) |
+| MC-38 reed switch | **D4** | GPIO5 (moved from GPIO4 to match the rebuilt board) | `INPUT_PULLUP`, **HIGH = door open** (corrected after real-hardware testing showed the original LOW=open assumption was backwards -- see `loop()`'s comment in the .ino) |
+| IR transmitter (LED driver) | **D5** | GPIO6 | transmit-only, no IR receiver in this build |
+| WS2812/WS281x RGB light strip DIN | **D3** | GPIO4 | status lights, **GRB** colour order; strip 5V -> board 5V, GND -> GND (the original reed-switch pin, reused) -- see "Status light strip" below |
+| (free) | D9, D10 | GPIO8, GPIO9 | GPIO8 was the original DHT pin; GPIO9 was SCL back when this used an I2C SHT31-D |
 
 The sensor actually on hand has 3 pins (VCC/GND/DATA), which is a
 DHT11/DHT22/AM2302, not the I2C SHT31-D earlier drafts of this project
@@ -43,6 +47,7 @@ Manager):
 - `IRremoteESP8266` (already installed in this project's sketchbook, v2.9.0)
 - `ArduinoJson` (v7.x — this sketch uses the v7 `JsonDocument` API)
 - BLE: **none to install** — see "BLE library" below.
+- Light strip: **none to install** — driven through the esp32 core's own RMT API (`rmtInit`/`rmtWrite`), the same calls the core's `rgbLedWrite()` uses.
 
 ## BLE library: which one, and why
 
@@ -195,6 +200,8 @@ Sent whenever pairing state changes, and immediately in reply to a
 {"cmd":"pairing_status"}
 {"cmd":"manual_pair","index":<int>}
 {"cmd":"manual_confirm"}
+{"cmd":"led","shelf":<0-100, % shelf life LEFT; -1 = unknown>,"alert":"none|warning|critical"}
+{"cmd":"identify"}
 ```
 
 - `set_category`: sets the alert setpoint used by the threshold rule
@@ -210,6 +217,13 @@ Sent whenever pairing state changes, and immediately in reply to a
   in-progress automatic sweep.
 - `manual_confirm`: persists the currently-selected manual candidate to NVS
   (the BLE equivalent of the serial `y` key) — marks pairing as `matched`.
+- `led`: what the light strip should show from the backend, sent by the phone dashboard after
+  every AI refresh (~10 s): Model 3 shelf life **left** (the most perishable product, for a mixed
+  load) and the newest backend alert of the last 10 minutes (`critical` = high/critical severity,
+  `warning` = anything else). Not stored; the strip stops showing it if no update arrives for
+  `PHONE_STATUS_STALE_MS` (2 min).
+- `identify`: plays a 5 s rainbow on the light strip, so the driver can see which box the phone
+  is connected to (also proves the phone → device direction works).
 
 Category → default alert setpoint (used only by the on-device threshold
 rule; the authoritative Arrhenius shelf-life math lives in
@@ -227,6 +241,9 @@ rule; the authoritative Arrhenius shelf-life math lives in
 If no category has been set, `DEFAULT_SETPOINT_C` (4.0°C) is used.
 
 ## Serial command set (manual-fallback pairing flow)
+
+Bench-test keys: `x` = IR LED test (3 s flashing, view through a phone's front camera), `g` = light strip colour test (red, green, blue, white, 1 s each), `d` = light strip demo (the whole workflow, 4.5 s per look, its meaning printed). Live console with these keys: `.venv\Scripts\python.exe scripts\esp_console.py`.
+
 
 Same key bindings as `frostmind_brand_select_ir.ino`, adapted into this
 sketch and kept in sync with the BLE manual-pairing commands (both operate
@@ -247,6 +264,69 @@ on the same underlying state):
 
 CSV sensor log (see below) prints continuously over the same serial
 connection regardless of which pairing mode is active.
+
+## Status light strip (WS2812 / WS281x, GRB)
+
+An 11-LED RGB strip on pad D3 (GPIO4) shows the device's state at a glance, so nobody needs to
+open the phone to see that something is wrong. It's designed to move like a "glyph" light rather
+than blink like a traffic light:
+- every frame is drawn in floating point, with lights at sub-pixel positions, so a moving light
+  glides between LEDs instead of hopping;
+- every change of state dissolves over 450 ms (`LED_CROSSFADE_MS`) instead of cutting;
+- 60 fps, gamma-corrected and temporally dithered output, so slow fades don't step;
+- a curated palette: a frost family (icy white, cyan, glacier blue) for the device's own
+  states, softened status colours (mint, lime, amber, coral), and a blue-violet-pink-orange
+  gradient reserved for the AI.
+
+`STATUS_LED_COUNT` (11) is the number of LEDs used. `STATUS_LED_BRIGHTNESS` (80/255, applied
+after gamma) caps every channel, so USB power is enough.
+
+**Wiring:** strip **5V** → board **5V** pin, **GND** → **GND**, **DIN** → pad **D3** (GPIO4). Connect to the
+strip's *input* end: the small arrows printed on the strip point away from it, and the pad says
+`DIN` (not `DO`/`DOUT`). A 300-500 Ω resistor in series on DIN is good practice but not required
+for a short wire.
+
+**One look at a time.** Nothing is ever layered on top of something else, and a moment always
+plays to its end (the next one waits in a short queue). The strip follows the box through a
+workflow (`currentLedStage()` / `drawLiveStatus()` in the `.ino`):
+
+| Stage | When | Look |
+|---|---|---|
+| **Waiting** | no phone connected | **Beacon**: a glacier-blue light breathing at the centre. Nothing else, not even alarms: nobody would see them |
+| **Setup** | phone connected, trip not live yet | **Checklist**: three segments, phone, product, AC. Done steps glow mint, the next one breathes ice. All three mint = ready to go live. Still no alarms: no product or setpoint chosen yet |
+| **Pairing** | AC auto-pairing running | **Ice comet** sweeping end to end over a faint progress fill, then a **mint sweep** (paired) or a **coral shake**, like a wrong password (no match) |
+| **Live** | the phone's dashboard is sending shelf life | see below |
+
+In **Live**, idle is **just the shelf-life bar**: length = Model 3 shelf life left (sub-pixel), colour
+sliding mint → lime → amber → coral as it drains, with a sheen running along it. A problem replaces
+it, most important first:
+1. **Device alarm** (temperature >3 °C off the category setpoint, changing >3 °C/min, or door open
+   >60 s): the whole strip beats coral like a heart for 8 s (`ALARM_URGENT_MS`). Then the bar comes
+   back **coral and breathing**, with the empty part glowing dim coral, until the alarm clears. A
+   merely low bar is short, steady and has a blue track.
+2. **Door open** (not yet an alarm): amber light spilling in from both ends, until it closes.
+
+**AI alert:** when the backend's AI flags something, a blue-violet-pink wave swells three times
+(4.5 s), then the bar returns. It replays every 2 min (`AI_REMINDER_MS`) while the alert is active.
+The explanation is on the phone.
+
+Moments (queued, about a second each):
+
+| Moment | When |
+|---|---|
+| **Frost bloom**: light blooms out from the centre | boot |
+| **Handshake**: two lights glide in from the ends, meet and flare | phone connected |
+| **Ripple**: one ring of light running outward | a command arrived (`set_category` also ticks the checklist's product step) |
+| **Go live**: a light runs the strip and leaves the bar behind | the dashboard starts sending shelf life |
+| **Spectrum**: the hue circle turning, a white glint passing through, 5 s | `identify` from the phone |
+
+Shelf life and the backend alert come from the phone (`{"cmd":"led",...}`). The device can't
+compute them itself because the product data and the models live on the server. Everything else
+is the device's own state, so the strip still works without a phone.
+
+Bench checks:
+- `g`: plain red, green, blue, white for 1 s each. If the first colour isn't red, the strip isn't GRB.
+- `d`: the whole workflow in order, 4.5 s per look, with each meaning printed to Serial. Good for a demo.
 
 ## Threshold-rule alert logic (Model 1, Stage 1 — MVP plan §4)
 

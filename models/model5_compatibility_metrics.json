@@ -1,0 +1,640 @@
+{
+  "model": "random_forest",
+  "algorithm": "RandomForestClassifier",
+  "calibrated_threshold": 0.46306189483189986,
+  "feature_cols": [
+    "temp_overlap_c",
+    "topt_diff_c",
+    "topt_mean_c",
+    "rh_overlap",
+    "rh_mid_diff",
+    "ethylene_risk",
+    "ethylene_prod_max",
+    "ethylene_sens_max",
+    "chill_risk_c",
+    "freeze_risk_c",
+    "n_chilling_sensitive",
+    "log_shelf_life_ratio",
+    "same_category"
+  ],
+  "label_source": "McGregor 1989, USDA Agricultural Handbook 668 compatibility groups (via FAO ae075e16), with McGregor's explicit 'not with' exceptions as negatives",
+  "n_labelled_products": 107,
+  "n_pairs": 5671,
+  "positive_rate": 0.4042,
+  "n_partitions": 30,
+  "test_fraction_products": 0.3,
+  "cold_start_test": {
+    "logistic_regression": {
+      "roc_auc": {
+        "mean": 0.9155,
+        "std": 0.0315
+      },
+      "pr_auc": {
+        "mean": 0.8903,
+        "std": 0.056
+      },
+      "accuracy": {
+        "mean": 0.836,
+        "std": 0.0299
+      },
+      "balanced_accuracy": {
+        "mean": 0.8277,
+        "std": 0.0364
+      },
+      "precision": {
+        "mean": 0.7915,
+        "std": 0.0804
+      },
+      "recall": {
+        "mean": 0.7952,
+        "std": 0.094
+      },
+      "f1": {
+        "mean": 0.7875,
+        "std": 0.0546
+      },
+      "mcc": {
+        "mean": 0.6599,
+        "std": 0.0704
+      },
+      "threshold": {
+        "mean": 0.6044,
+        "std": 0.1198
+      },
+      "n_test_pairs": {
+        "mean": 528.0,
+        "std": 0.0
+      }
+    },
+    "random_forest": {
+      "roc_auc": {
+        "mean": 0.9305,
+        "std": 0.0338
+      },
+      "pr_auc": {
+        "mean": 0.9167,
+        "std": 0.0381
+      },
+      "accuracy": {
+        "mean": 0.8667,
+        "std": 0.0248
+      },
+      "balanced_accuracy": {
+        "mean": 0.8545,
+        "std": 0.0349
+      },
+      "precision": {
+        "mean": 0.8434,
+        "std": 0.0491
+      },
+      "recall": {
+        "mean": 0.805,
+        "std": 0.0743
+      },
+      "f1": {
+        "mean": 0.8218,
+        "std": 0.0502
+      },
+      "mcc": {
+        "mean": 0.717,
+        "std": 0.0626
+      },
+      "threshold": {
+        "mean": 0.5442,
+        "std": 0.0808
+      },
+      "n_test_pairs": {
+        "mean": 528.0,
+        "std": 0.0
+      }
+    },
+    "hist_gradient_boosting": {
+      "roc_auc": {
+        "mean": 0.9281,
+        "std": 0.0338
+      },
+      "pr_auc": {
+        "mean": 0.9073,
+        "std": 0.0417
+      },
+      "accuracy": {
+        "mean": 0.8619,
+        "std": 0.0278
+      },
+      "balanced_accuracy": {
+        "mean": 0.8507,
+        "std": 0.0341
+      },
+      "precision": {
+        "mean": 0.8376,
+        "std": 0.067
+      },
+      "recall": {
+        "mean": 0.8025,
+        "std": 0.072
+      },
+      "f1": {
+        "mean": 0.8167,
+        "std": 0.0493
+      },
+      "mcc": {
+        "mean": 0.7091,
+        "std": 0.0654
+      },
+      "threshold": {
+        "mean": 0.6328,
+        "std": 0.1411
+      },
+      "n_test_pairs": {
+        "mean": 528.0,
+        "std": 0.0
+      }
+    },
+    "rule_overlap_no_ethylene": {
+      "roc_auc": {
+        "mean": 0.8084,
+        "std": 0.0406
+      },
+      "pr_auc": {
+        "mean": 0.6902,
+        "std": 0.077
+      },
+      "accuracy": {
+        "mean": 0.8245,
+        "std": 0.0347
+      },
+      "balanced_accuracy": {
+        "mean": 0.8084,
+        "std": 0.0406
+      },
+      "precision": {
+        "mean": 0.7959,
+        "std": 0.0758
+      },
+      "recall": {
+        "mean": 0.7363,
+        "std": 0.0647
+      },
+      "f1": {
+        "mean": 0.7632,
+        "std": 0.0596
+      },
+      "mcc": {
+        "mean": 0.6267,
+        "std": 0.0828
+      }
+    },
+    "rule_topt_within_2c": {
+      "roc_auc": {
+        "mean": 0.8388,
+        "std": 0.0328
+      },
+      "pr_auc": {
+        "mean": 0.6942,
+        "std": 0.065
+      },
+      "accuracy": {
+        "mean": 0.8299,
+        "std": 0.0314
+      },
+      "balanced_accuracy": {
+        "mean": 0.8388,
+        "std": 0.0328
+      },
+      "precision": {
+        "mean": 0.7369,
+        "std": 0.0631
+      },
+      "recall": {
+        "mean": 0.876,
+        "std": 0.0628
+      },
+      "f1": {
+        "mean": 0.7983,
+        "std": 0.0486
+      },
+      "mcc": {
+        "mean": 0.6632,
+        "std": 0.0683
+      }
+    }
+  },
+  "one_product_unseen_test": {
+    "logistic_regression": {
+      "roc_auc": {
+        "mean": 0.9233,
+        "std": 0.01
+      },
+      "pr_auc": {
+        "mean": 0.9069,
+        "std": 0.0208
+      },
+      "accuracy": {
+        "mean": 0.8504,
+        "std": 0.0169
+      },
+      "balanced_accuracy": {
+        "mean": 0.8436,
+        "std": 0.0138
+      },
+      "precision": {
+        "mean": 0.8298,
+        "std": 0.0607
+      },
+      "recall": {
+        "mean": 0.8078,
+        "std": 0.0579
+      },
+      "f1": {
+        "mean": 0.8148,
+        "std": 0.018
+      },
+      "mcc": {
+        "mean": 0.6942,
+        "std": 0.0308
+      }
+    },
+    "random_forest": {
+      "roc_auc": {
+        "mean": 0.9631,
+        "std": 0.0153
+      },
+      "pr_auc": {
+        "mean": 0.9558,
+        "std": 0.0152
+      },
+      "accuracy": {
+        "mean": 0.9047,
+        "std": 0.015
+      },
+      "balanced_accuracy": {
+        "mean": 0.8978,
+        "std": 0.0177
+      },
+      "precision": {
+        "mean": 0.9016,
+        "std": 0.0288
+      },
+      "recall": {
+        "mean": 0.8614,
+        "std": 0.0401
+      },
+      "f1": {
+        "mean": 0.8802,
+        "std": 0.0214
+      },
+      "mcc": {
+        "mean": 0.8027,
+        "std": 0.032
+      }
+    },
+    "hist_gradient_boosting": {
+      "roc_auc": {
+        "mean": 0.9604,
+        "std": 0.0158
+      },
+      "pr_auc": {
+        "mean": 0.9481,
+        "std": 0.0184
+      },
+      "accuracy": {
+        "mean": 0.9018,
+        "std": 0.0155
+      },
+      "balanced_accuracy": {
+        "mean": 0.8944,
+        "std": 0.0178
+      },
+      "precision": {
+        "mean": 0.9024,
+        "std": 0.0379
+      },
+      "recall": {
+        "mean": 0.854,
+        "std": 0.0446
+      },
+      "f1": {
+        "mean": 0.8761,
+        "std": 0.0216
+      },
+      "mcc": {
+        "mean": 0.7974,
+        "std": 0.0327
+      }
+    }
+  },
+  "pooled_confusion_matrix_best": {
+    "tn": 8734,
+    "fp": 926,
+    "fn": 1186,
+    "tp": 4994
+  },
+  "permutation_importance_roc_auc_hgb": {
+    "topt_diff_c": 0.0737,
+    "chill_risk_c": 0.0489,
+    "topt_mean_c": 0.0231,
+    "rh_mid_diff": 0.0138,
+    "rh_overlap": 0.0137,
+    "ethylene_prod_max": 0.0131,
+    "same_category": 0.0091,
+    "log_shelf_life_ratio": 0.009,
+    "freeze_risk_c": 0.0012,
+    "n_chilling_sensitive": 0.0011,
+    "temp_overlap_c": 0.001,
+    "ethylene_risk": -0.0011,
+    "ethylene_sens_max": -0.0015
+  },
+  "unlabelled_produce_top_partners": {
+    "basil": [
+      [
+        "peppers_sweet",
+        0.664
+      ],
+      [
+        "cucumbers",
+        0.645
+      ],
+      [
+        "eggplant",
+        0.618
+      ],
+      [
+        "sweet_potatoes",
+        0.598
+      ],
+      [
+        "tomatoes_ripe",
+        0.56
+      ]
+    ],
+    "beans_dry": [
+      [
+        "guavas",
+        0.461
+      ],
+      [
+        "papayas",
+        0.448
+      ],
+      [
+        "avocados_unripe",
+        0.448
+      ],
+      [
+        "avocados_ripe",
+        0.377
+      ],
+      [
+        "tangerines",
+        0.361
+      ]
+    ],
+    "beets": [
+      [
+        "turnips",
+        0.999
+      ],
+      [
+        "beets_topped",
+        0.999
+      ],
+      [
+        "parsnips",
+        0.999
+      ],
+      [
+        "rutabagas",
+        0.999
+      ],
+      [
+        "carrots_immature",
+        0.999
+      ]
+    ],
+    "cabbage_chinese": [
+      [
+        "blackberries",
+        1.0
+      ],
+      [
+        "raspberries",
+        1.0
+      ],
+      [
+        "currants",
+        1.0
+      ],
+      [
+        "elderberries",
+        1.0
+      ],
+      [
+        "carrots_immature",
+        1.0
+      ]
+    ],
+    "cherries": [
+      [
+        "gooseberries",
+        0.999
+      ],
+      [
+        "celery",
+        0.999
+      ],
+      [
+        "cherries_sour",
+        0.999
+      ],
+      [
+        "strawberries",
+        0.999
+      ],
+      [
+        "currants",
+        0.997
+      ]
+    ],
+    "herbs": [
+      [
+        "turnips",
+        0.999
+      ],
+      [
+        "mushrooms",
+        0.999
+      ],
+      [
+        "beets_bunched",
+        0.999
+      ],
+      [
+        "beets_topped",
+        0.999
+      ],
+      [
+        "kohlrabi",
+        0.999
+      ]
+    ],
+    "napa": [
+      [
+        "turnips",
+        0.999
+      ],
+      [
+        "mushrooms",
+        0.999
+      ],
+      [
+        "beets_bunched",
+        0.999
+      ],
+      [
+        "beets_topped",
+        0.999
+      ],
+      [
+        "kohlrabi",
+        0.999
+      ]
+    ],
+    "peas_southern": [
+      [
+        "beans_lima",
+        0.838
+      ],
+      [
+        "squashes_summer",
+        0.742
+      ],
+      [
+        "turnips",
+        0.511
+      ],
+      [
+        "beans_green_or_snap",
+        0.484
+      ],
+      [
+        "potatoes",
+        0.483
+      ]
+    ],
+    "peppers_hot_chili": [
+      [
+        "onions_dry",
+        0.564
+      ],
+      [
+        "garlic",
+        0.494
+      ],
+      [
+        "avocados_ripe",
+        0.409
+      ],
+      [
+        "cantaloupe",
+        0.396
+      ],
+      [
+        "guavas",
+        0.381
+      ]
+    ],
+    "precut_fruit": [
+      [
+        "cherries_sour",
+        0.963
+      ],
+      [
+        "strawberries",
+        0.963
+      ],
+      [
+        "currants",
+        0.961
+      ],
+      [
+        "raspberries",
+        0.961
+      ],
+      [
+        "gooseberries",
+        0.956
+      ]
+    ],
+    "precut_vegetables": [
+      [
+        "endive",
+        0.991
+      ],
+      [
+        "kale",
+        0.991
+      ],
+      [
+        "escarole",
+        0.991
+      ],
+      [
+        "watercress",
+        0.991
+      ],
+      [
+        "rhubarb",
+        0.99
+      ]
+    ],
+    "salad_mixes": [
+      [
+        "turnips",
+        0.999
+      ],
+      [
+        "mushrooms",
+        0.999
+      ],
+      [
+        "beets_bunched",
+        0.999
+      ],
+      [
+        "beets_topped",
+        0.999
+      ],
+      [
+        "kohlrabi",
+        0.999
+      ]
+    ],
+    "sprouts": [
+      [
+        "turnips",
+        0.999
+      ],
+      [
+        "mushrooms",
+        0.999
+      ],
+      [
+        "beets_bunched",
+        0.999
+      ],
+      [
+        "beets_topped",
+        0.999
+      ],
+      [
+        "kohlrabi",
+        0.999
+      ]
+    ]
+  },
+  "hyperparameters": {
+    "logistic_regression": "Pipeline(steps=[('simpleimputer', SimpleImputer(strategy='median')),\n                ('standardscaler', StandardScaler()),\n                ('logisticregression',\n                 LogisticRegression(class_weight='balanced', max_iter=5000))])",
+    "random_forest": "Pipeline(steps=[('simpleimputer', SimpleImputer(strategy='median')),\n                ('randomforestclassifier',\n                 RandomForestClassifier(class_weight='balanced',\n                                        min_samples_leaf=3, n_estimators=300,\n                                        n_jobs=-1, random_state=42))])",
+    "hist_gradient_boosting": "HistGradientBoostingClassifier(class_weight='balanced', l2_regularization=1.0,\n                               learning_rate=0.05, max_depth=4, max_iter=300,\n                               random_state=42)"
+  }
+}

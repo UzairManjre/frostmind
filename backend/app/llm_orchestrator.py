@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import datetime, timezone
 
 import httpx
@@ -45,6 +46,66 @@ from app.config import OLLAMA_MODEL, OLLAMA_TIMEOUT_SECONDS, OLLAMA_URL
 from app.logging_config import get_logger, log_event
 
 _logger = get_logger("frostmind.llm")
+
+# ---- which local model to use ------------------------------------------------------------------
+# OLLAMA_MODEL is the preferred model, but a machine only has whatever was `ollama pull`ed on it
+# (the originally configured gemma-4-E4B was later removed from the dev box, which silently
+# turned every alert explanation into a no-op). So: ask Ollama what's installed, use the
+# configured model if present, otherwise the smallest installed instruction model from a known
+# family. Cached for a couple of minutes; any failure falls back to the configured name, so the
+# documented "LLM unreachable -> None" path is unchanged.
+_TAGS_URL = OLLAMA_URL.rsplit("/api/", 1)[0] + "/api/tags"
+_MODEL_CACHE_SECONDS = 120
+_model_cache: dict = {"name": None, "checked": 0.0, "installed": []}
+_PREFERRED_FAMILIES = ("gemma", "llama", "qwen", "mistral", "phi")
+
+
+def _pick_model(installed: list[tuple[str, int]]) -> str | None:
+    names = [n for n, _ in installed]
+    if OLLAMA_MODEL in names:
+        return OLLAMA_MODEL
+    chat = [(n, size) for n, size in installed if "embed" not in n.lower()]
+    for family in _PREFERRED_FAMILIES:
+        candidates = [(n, size) for n, size in chat if family in n.lower()]
+        if candidates:
+            return min(candidates, key=lambda c: c[1] or 0)[0]
+    return chat[0][0] if chat else None
+
+
+async def _resolve_model() -> str:
+    now = time.monotonic()
+    if _model_cache["name"] and now - _model_cache["checked"] < _MODEL_CACHE_SECONDS:
+        return _model_cache["name"]
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(_TAGS_URL)
+            resp.raise_for_status()
+            data = resp.json()
+        installed = [(m["name"], int(m.get("size") or 0)) for m in data.get("models", [])]
+    except Exception:  # noqa: BLE001 - unreachable/mocked Ollama: keep the configured name
+        return _model_cache["name"] or OLLAMA_MODEL
+    name = _pick_model(installed) or OLLAMA_MODEL
+    if name != OLLAMA_MODEL and name != _model_cache["name"]:
+        log_event(_logger, logging.WARNING, "llm_model_fallback", configured=OLLAMA_MODEL, using=name)
+    _model_cache.update(name=name, checked=now, installed=[n for n, _ in installed])
+    return name
+
+
+def llm_status(live: bool = False) -> dict:
+    """What the LLM layer is actually using. live=True asks Ollama right now (used by
+    GET /ai/status); otherwise reports the last resolution (cheap, used by /health)."""
+    if live:
+        try:
+            resp = httpx.get(_TAGS_URL, timeout=2.0)
+            resp.raise_for_status()
+            installed = [(m["name"], int(m.get("size") or 0)) for m in resp.json().get("models", [])]
+            name = _pick_model(installed)
+            _model_cache.update(name=name, checked=time.monotonic(), installed=[n for n, _ in installed])
+            return {"reachable": True, "configured_model": OLLAMA_MODEL, "model": name,
+                    "installed_models": [n for n, _ in installed]}
+        except Exception as exc:  # noqa: BLE001
+            return {"reachable": False, "configured_model": OLLAMA_MODEL, "model": None, "error": str(exc)}
+    return {"reachable": _model_cache["name"] is not None, "configured_model": OLLAMA_MODEL, "model": _model_cache["name"]}
 
 ALERT_SYSTEM_PROMPT = """You are a cold-chain logistics assistant helping a human operator decide what to do about an alert from a refrigerated shipment monitor. You are given the alert, the shipment's product category and shelf-life state (already computed by a real kinetic model -- trust those numbers, do not recompute or second-guess them), and recent sensor history.
 
@@ -60,11 +121,28 @@ COMPLIANCE_SYSTEM_PROMPT = """You are a cold-chain logistics assistant writing a
 Write a clear, factual incident narrative in plain prose (not JSON, not bullet points) covering: what happened over the course of the shipment, in chronological order; which excursions/alerts occurred and their real-world significance for this product category; and an overall conclusion about the shipment's integrity. Be factual and specific to the numbers given -- this is a record that may be read by someone who was not present, not a sales narrative. If nothing notable happened, say so plainly rather than manufacturing concern."""
 
 
+def _mixed_load_lines(shipment) -> list[str]:
+    """Extra context for a mixed-load shipment (Load Planner): what's on board, the setpoint
+    Model 4 recommended, and per-product shelf life -- so the explanation is about the actual
+    products, not just the device category."""
+    products = getattr(shipment, "products", None)
+    if not products:
+        return []
+    lines = ["Products on board: " + ", ".join(f"{p.get('name', p.get('product_id'))} ({p.get('quantity_kg', '?')} kg)" for p in products)]
+    if getattr(shipment, "recommended_setpoint_c", None) is not None:
+        lines.append(f"Recommended setpoint for this mix (Model 4): {shipment.recommended_setpoint_c:.1f}C")
+    for p in getattr(shipment, "product_shelf_life", None) or []:
+        if p.get("consumed_fraction") is not None:
+            lines.append(f"  {p.get('name')}: {p['consumed_fraction'] * 100:.1f}% of shelf life used")
+    return lines
+
+
 def _build_alert_prompt(alert, shipment, shelf_life_consumed, shelf_life_remaining_hours, recent_readings, alert_history) -> str:
     lines = [
         f"Alert type: {alert.type.value}, stored severity: {alert.severity.value}",
         f"Alert message: {alert.message}",
         f"Shipment category: {shipment.category.value}",
+        *_mixed_load_lines(shipment),
         f"Shelf life consumed: {shelf_life_consumed * 100:.1f}%" if shelf_life_consumed is not None else "Shelf life consumed: not yet computed",
         f"Shelf life remaining: {shelf_life_remaining_hours:.1f} hours" if shelf_life_remaining_hours is not None else "Shelf life remaining: not yet computed",
         "",
@@ -83,6 +161,7 @@ def _build_compliance_prompt(shipment, readings, alerts) -> str:
     temps = [r.temp_c for r in readings if r.temp_c is not None]
     lines = [
         f"Shipment category: {shipment.category.value}",
+        *_mixed_load_lines(shipment),
         f"Status: {shipment.status.value}",
         f"Start time: {shipment.start_time.isoformat() if shipment.start_time else 'not started'}",
         f"End time: {shipment.end_time.isoformat() if shipment.end_time else 'not ended'}",
@@ -105,8 +184,9 @@ async def _call_ollama(system_prompt: str, user_prompt: str, want_json: bool) ->
     when JSON was requested. Every None path is logged with enough detail to diagnose a real
     outage; callers never need to log the failure themselves, just handle None.
     """
+    model = await _resolve_model()
     payload = {
-        "model": OLLAMA_MODEL,
+        "model": model,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -122,10 +202,10 @@ async def _call_ollama(system_prompt: str, user_prompt: str, want_json: bool) ->
             resp.raise_for_status()
             body = resp.json()
     except httpx.TimeoutException:
-        log_event(_logger, logging.WARNING, "llm_call_timeout", model=OLLAMA_MODEL, timeout_s=OLLAMA_TIMEOUT_SECONDS)
+        log_event(_logger, logging.WARNING, "llm_call_timeout", model=model, timeout_s=OLLAMA_TIMEOUT_SECONDS)
         return None
     except Exception as exc:  # noqa: BLE001 - deliberately broad, see module docstring's reliability contract
-        log_event(_logger, logging.WARNING, "llm_call_failed", model=OLLAMA_MODEL, error=str(exc))
+        log_event(_logger, logging.WARNING, "llm_call_failed", model=model, error=str(exc))
         return None
 
     content = body.get("message", {}).get("content", "")
@@ -137,7 +217,7 @@ async def _call_ollama(system_prompt: str, user_prompt: str, want_json: bool) ->
     except json.JSONDecodeError as exc:
         # Local models occasionally don't perfectly follow the schema even with format:"json" --
         # log the raw content so this is diagnosable, then fall back same as any other failure.
-        log_event(_logger, logging.WARNING, "llm_response_not_json", model=OLLAMA_MODEL, error=str(exc), raw=content[:500])
+        log_event(_logger, logging.WARNING, "llm_response_not_json", model=model, error=str(exc), raw=content[:500])
         return None
 
 

@@ -87,7 +87,10 @@ semantics -- verify against that, not this mirror, if the two ever disagree.
 Device -> phone, pairing status: `{"type":"pairing_status","state":"scanning|matched|no_match|idle","candidate_index":<int>,"total":<int>}`
 
 Phone -> device commands: `set_category`, `start_pairing`, `pairing_status`, `manual_pair` (with
-`index`), `manual_confirm`. See `js/config.js` and `js/wizard.js` for exact usage.
+`index`), `manual_confirm`, `led` (light-strip status: `shelf` % left + `alert` level, sent by
+the dashboard after every AI refresh) and `identify` (5 s rainbow on the box's light strip; the
+dashboard and wizard step 5 have a button for it). See `js/config.js`, `js/wizard.js` and
+`js/dashboard.js` for exact usage. `js/ble.js` queues commands so two never overlap on the link.
 
 `js/ble.js` handles BLE's link-layer chunking in both directions: incoming notifications are
 buffered across `characteristicvaluechanged` events until a full `\n`-terminated line is
@@ -113,9 +116,14 @@ handle, so this fires on every reload, not just a broken state).
    re-registration is naturally idempotent (the backend already treats a repeat `mac_address` as
    "return the existing record"). Only the truck name/plate are still manually typed -- that's
    genuinely user-decided information the device can't supply.
-3. **Assign category** -- dropdown fetched live from `GET /categories` (falls back to the
-   hardcoded 6-key list in `js/config.js` if that call fails) -> `POST /shipments`, plus a BLE
-   `set_category` command so the device knows it too.
+3. **What are you shipping?** (AI Load Planner, Models 4 + 5) -- search the 155-product catalog
+   (`GET /products`) or tap a preset, add any number of products with kg, then **Check load
+   (AI)** -> `POST /planner/plan`. Shows which products can share this truck's compartment (with
+   the reasons for any split), each compartment's recommended setpoint, and whether an ESP preset
+   can apply it. **Create shipment** -> `POST /shipments` with `products`; the backend re-checks
+   the mix (422 with the groups if it's unsafe) and stores Model 4's setpoint, then the phone
+   sends the nearest preset to the ESP with BLE `set_category`. A classic single-category
+   shipment is still available under "Ship one category instead".
 4. **Auto-pair the AC** -- `POST /devices/{id}/pairing/start` (backend record) + BLE
    `start_pairing` write; listens for `pairing_status` TX notifications and relays each one to
    `POST /devices/{id}/pairing/status` so the admin panel can poll progress too. Manual override
@@ -124,6 +132,11 @@ handle, so this fires on every reload, not just a broken state).
    Continue button stays disabled until at least one real reading has arrived, so this step
    can't be passed on faith.
 6. **Go live** -- `PATCH /shipments/{id}` to `in-transit`, then switches to the live dashboard.
+
+**Live dashboard AI panel** -- every 10 s the dashboard calls `GET /shipments/{id}/live` with the
+device's `X-Device-Key` (the phone has no admin login) and shows Model 4's recommended setpoint vs
+the actual temperature, Model 3 shelf life per product, the latest alerts with the local LLM's
+assessment and recommended action, and which AI components are live.
 
 ## Offline buffering (Phase2 plan §2.4)
 
@@ -184,6 +197,8 @@ without `lat`/`lng`, exactly as before this module existed.
   instead of serving a stale v1 cache that never knew it existed.
 
 ## Run it
+
+**Easiest: from the project root run `.venv\Scripts\python.exe start_frostmind.py`.** It detects this machine's current network address, makes a fresh HTTPS certificate for it, and starts the backend (HTTPS :8000 for the phone, HTTP :8001 for the admin panel), this phone app (HTTPS :5500) and the admin panel (:3000). Nothing is tied to a fixed IP, so the same command works on any laptop/network. The app derives the backend address from the page's own host, so there's nothing to type in Settings. The manual steps below are what that script automates.
 
 No build step, but it **must be served over HTTPS** (or plain HTTP to `localhost` specifically)
 -- Web Bluetooth requires a secure context, and a LAN IP over plain HTTP does not qualify. This

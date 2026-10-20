@@ -48,7 +48,7 @@ function AlertsView() {
         eyebrow="Incident feed"
         title="Alerts"
         description="Anomaly detections, shelf-life-threshold breaches and door events across the whole fleet. Refreshes every 5s."
-        page={[2, 4]}
+        page={[2, 6]}
         actions={
           data && (
             <div className="flex gap-3">

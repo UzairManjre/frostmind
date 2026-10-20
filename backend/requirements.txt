@@ -9,11 +9,17 @@ numpy>=2.0
 httpx>=0.28
 pytest>=8.0
 
+# Load Planner (app/load_planner.py): scipy for the closed-form physics, pandas for the catalog,
+# joblib + scikit-learn to unpickle models/model4_*.pkl and model5_*.pkl.
+scipy>=1.13
+pandas>=2.0
+joblib>=1.5
+scikit-learn>=1.9
+# start_frostmind.py: generates the self-signed HTTPS cert for whatever machine it runs on
+cryptography>=42
+
 # Only actually imported at runtime if models/model1_isolation_forest_frostmind.pkl exists on
 # disk (app/ml.py's import-time check) -- not required for the app to boot/serve/test today,
 # since that file doesn't exist yet (see app/ml.py and README.md's "Model 1 status"). Install
 # these before dropping a real .pkl in place, or scripts/train_model1_frostmind.py won't run
-# either:
-#   joblib>=1.5
-#   pandas>=2.0
-#   scikit-learn>=1.9
+# either (joblib/pandas/scikit-learn are now listed above for the Load Planner).

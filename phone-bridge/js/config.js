@@ -33,8 +33,26 @@ const STORAGE_KEYS = Object.freeze({
   WIZARD_STEP: "frostmind.wizardStep",
 });
 
+const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
+
+// The backend runs on the same machine that serves this page (start_frostmind.py starts both),
+// so the default is "this page's host, port 8000" -- no IP is ever baked in. A saved override is
+// still honoured, EXCEPT a stale one: if both the saved backend and this page are bare IP
+// addresses but different ones, the dev machine has simply moved networks (or it's a different
+// laptop), so the old address can only fail -- fall back to the current host instead.
 export function getApiBase() {
-  return localStorage.getItem(STORAGE_KEYS.API_BASE) || DEFAULT_API_BASE;
+  const saved = localStorage.getItem(STORAGE_KEYS.API_BASE);
+  if (!saved) return DEFAULT_API_BASE;
+  try {
+    const savedHost = new URL(saved).hostname;
+    if (IPV4.test(savedHost) && IPV4.test(location.hostname) && savedHost !== location.hostname) {
+      localStorage.removeItem(STORAGE_KEYS.API_BASE);
+      return DEFAULT_API_BASE;
+    }
+  } catch {
+    return DEFAULT_API_BASE; // unparseable saved value
+  }
+  return saved;
 }
 
 export function setApiBase(url) {

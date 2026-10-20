@@ -207,7 +207,7 @@ function FleetView() {
           </>
         }
         description="Live status of each truck, its device, and the shipment it's carrying -- temperature, door state, and shelf life at a glance."
-        page={[1, 4]}
+        page={[1, 6]}
       >
         {data && data.length > 0 && <FleetStats data={data} />}
       </PageHeader>

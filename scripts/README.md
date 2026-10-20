@@ -26,6 +26,12 @@ py -m venv .venv
 | `explore_iot_temp.py` | — | Kaggle IoT temperature | Real, unlabeled — profiling only, no model trained |
 | `model3_shelf_life.py` | 3 | None (Arrhenius formula, illustrative Ea/A) | N/A |
 | `train_model1_frostmind.py` | 1 | `data/frostmind_logs/frostmind_log.csv` | Real, once you log it — **not runnable yet**, no file exists |
+| `fetch_product_data.py` | 4, 5 | Downloads the public product-storage pages into `data/product_catalog/raw/` | Real public tables |
+| `build_product_catalog.py` | 4, 5 | Cleans and merges them into `product_catalog_clean.csv` (155 products) | Real, cleaned, every imputation flagged |
+| `estimate_reefer_fluctuation.py` | 4 | Real reefer temperature σ from the milk sessions | Real |
+| `train_model5_compatibility.py` | 5 | McGregor (USDA AH-668) expert-labelled produce pairs, product-disjoint 30× evaluation | Real expert labels |
+| `train_model4_mixed_setpoint.py` | 4 | About 20k mixed loads of real products, labelled by the physics teacher, product-disjoint test | **Simulated loads** (real products + real σ) |
+| `common/products.py` | 4, 5 | Shared physics, features, policy rules and grouping. **The backend imports this same file.** | — |
 | `train_all.py` | — | runs everything above in sequence | — |
 
 Run any script directly, e.g. `..\.venv\Scripts\python.exe train_model1_nab.py`, or
@@ -83,3 +89,11 @@ doesn't exist yet. Once you've logged a normal baseline + 5-10 induced-anomaly c
 plan's build order, save the combined CSV there (columns: `ts, temp, humidity, door,
 rate_of_change, session_label`) and run it directly, or via `train_all.py` (it's auto-included
 once the file exists).
+
+## Models 4 and 5: the Load Planner
+
+The full write-up is `../FROSTMIND_Model4_Model5_Submission.md` (Word version: `.docx`). In short:
+
+- **Model 5 (which products can ship together)** is a random forest over 13 symmetric physical pair features. Labels are McGregor's expert compatibility groups. It is evaluated on *products it never saw* over 30 random product splits and compared against two hand-written rules. Output: `models/model5_compatibility.pkl` plus `_metrics.json`, which includes the Youden threshold.
+- **Model 4 (ideal temperature for a mixed load)**: a physics-informed optimizer (Arrhenius/Q10 decay, chilling wall, freezing damage, legal chance constraints under the real σ) is the teacher. A gradient-boosting student is distilled from about 20k simulated loads and tested on unseen products. It is also checked externally against McGregor's published group temperatures. Output: `models/model4_mixed_setpoint.pkl` plus `_metrics.json`.
+- Figures go to `../docs/figures/model4_5/`.

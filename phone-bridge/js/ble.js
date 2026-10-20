@@ -73,6 +73,12 @@ export class BleBridge extends EventTarget {
     this._autoReconnectEnabled = true;
     this._reconnectAttempt = 0;
     this._reconnectTimer = null;
+
+    // Commands are written one after another, never overlapping: two at once (e.g. the
+    // dashboard's periodic light-strip status while a button sends "identify") would make Web
+    // Bluetooth throw "GATT operation already in progress", or interleave their 20-byte chunks
+    // into garbage the firmware can't parse.
+    this._writeChain = Promise.resolve();
   }
 
   get connected() {
@@ -91,8 +97,11 @@ export class BleBridge extends EventTarget {
       );
     }
 
+    // Filters are OR'd: match the Nordic UART service UUID OR the advertised name. The name
+    // filter is a safety net -- a 128-bit UUID + flags + the name can overflow the 31-byte
+    // advertising packet, and some phones then only see one of them.
     this.device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [BLE.SERVICE_UUID] }],
+      filters: [{ services: [BLE.SERVICE_UUID] }, { namePrefix: "FROSTMIND" }],
       optionalServices: [BLE.SERVICE_UUID],
     });
 
@@ -223,8 +232,16 @@ export class BleBridge extends EventTarget {
    *   {"cmd":"pairing_status"}
    *   {"cmd":"manual_pair","index":<int>}
    *   {"cmd":"manual_confirm"}
+   *   {"cmd":"led","shelf":<0-100 % left, -1 unknown>,"alert":"none|warning|critical"}
+   *   {"cmd":"identify"}
    */
-  async sendCommand(commandObj) {
+  sendCommand(commandObj) {
+    const run = this._writeChain.then(() => this._writeCommand(commandObj));
+    this._writeChain = run.catch(() => {}); // one failed write mustn't block the ones after it
+    return run;
+  }
+
+  async _writeCommand(commandObj) {
     if (!this.rxCharacteristic) {
       throw new Error("Not connected to a device yet.");
     }

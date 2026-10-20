@@ -1,0 +1,34 @@
+{
+  "S1_engineeringtoolbox_fruits_vegetables.html": {
+    "url": "https://www.engineeringtoolbox.com/fruits-vegetables-storage-conditions-d_710.html",
+    "fetched_at": "2026-09-27T11:14:31+00:00",
+    "http_status": 200,
+    "bytes": 63838,
+    "sha256": "8dc99a7658a618a234aa287a2b642544c0fc158c700aa3c39156448ae503d6e2",
+    "method": "scripts/fetch_product_data.py (urllib)"
+  },
+  "S3_fao_mcgregor_compatibility_groups.html": {
+    "url": "https://www.fao.org/4/ae075e/ae075e16.htm",
+    "fetched_at": "2026-09-27T11:14:35+00:00",
+    "http_status": 200,
+    "bytes": 23685,
+    "sha256": "1c94c01a43303e4cfe82f862c41e4515cc3c3069a3e4c7756aafe243592c71d8",
+    "method": "scripts/fetch_product_data.py (urllib)"
+  },
+  "S2_umaine_bulletin_4135.html": {
+    "url": "https://extension.umaine.edu/publications/4135e/",
+    "fetched_at": "2026-09-27T11:14:35+00:00",
+    "http_status": 200,
+    "bytes": 98813,
+    "sha256": "363ca6d3884176edc872b0f97102c500071fc4bb1f3c393fd1e29acd3b2a1de2",
+    "method": "scripts/fetch_product_data.py (urllib)"
+  },
+  "S4_vt_extension_348-960_food_storage.html": {
+    "url": "https://www.pubs.ext.vt.edu/348/348-960/348-960.html",
+    "fetched_at": "2026-09-27T11:14:40+00:00",
+    "http_status": 200,
+    "bytes": 617660,
+    "sha256": "b4219b82cb330a9fdc15606e16230cb138737eb95eefaf971ce598dbe550c55d",
+    "method": "scripts/fetch_product_data.py (urllib)"
+  }
+}

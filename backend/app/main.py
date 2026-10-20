@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -8,11 +9,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import CORS_ORIGINS, DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD
-from app.database import Base, SessionLocal, engine
+from app.database import Base, SessionLocal, engine, ensure_columns
 from app.logging_config import configure_logging, get_logger, log_event
+from app.load_planner import MODEL4_ACTIVE, MODEL5_ACTIVE
 from app.ml import MODEL1_ACTIVE, PRODUCT_LIBRARY
 from app.models import User, UserRole
-from app.routers import alerts, analytics, auth, devices, ingest, shipments, trucks
+from app.llm_orchestrator import llm_status
+from app.routers import ai, alerts, analytics, auth, devices, ingest, planner, shipments, trucks
 
 configure_logging()
 logger = get_logger("frostmind.main")
@@ -38,7 +41,13 @@ def seed_default_admin() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    added = ensure_columns()
+    if added:
+        log_event(logger, logging.INFO, "db_columns_added", columns=added)
     seed_default_admin()
+    # Resolve which local LLM to use in the background (never blocks startup), so /health
+    # reports it from the start.
+    threading.Thread(target=llm_status, kwargs={"live": True}, daemon=True).start()
     yield
 
 
@@ -59,6 +68,8 @@ app.include_router(shipments.router)
 app.include_router(alerts.router)
 app.include_router(ingest.router)
 app.include_router(analytics.router)
+app.include_router(planner.router)
+app.include_router(ai.router)
 
 
 @app.exception_handler(Exception)
@@ -91,6 +102,15 @@ def health():
             if MODEL1_ACTIVE
             else "not-yet-wired (device threshold rule is the live anomaly signal)"
         ),
+        # Load Planner (app/load_planner.py): both degrade to physics/rules when the pkl is absent.
+        "model4_status": (
+            "active (ML setpoint, guarded by physics optimizer)" if MODEL4_ACTIVE else "physics-only (models/model4_mixed_setpoint.pkl not found)"
+        ),
+        "model5_status": (
+            "active (ML compatibility + policy vetoes)" if MODEL5_ACTIVE else "rule-only (models/model5_compatibility.pkl not found)"
+        ),
+        # Last model the LLM layer resolved (cheap, no network call here); GET /ai/status checks live.
+        "llm_status": llm_status(live=False),
     }
 
 

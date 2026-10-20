@@ -271,11 +271,40 @@ also carry `lat`/`lng` through for completeness.
 - `GET /analytics/fleet?days=30` -- fleet-wide alert/shipment trends (admin-JWT); see "Fleet
   analytics" above
 - `GET /categories` -- the 6 `PRODUCT_LIBRARY` categories, for the setup wizard's dropdown
+- `POST /shipments` also accepts `products: [{product_id, quantity_kg}]` instead of `category` -- a
+  mixed load: checked by Model 5 + policy vetoes (422 with the groups if they can't share one
+  compartment), Model 4's setpoint stored; `/ingest` then tracks shelf life per product and flags
+  readings more than 3 C from that setpoint
+- `GET /shipments/{id}/live` -- phone dashboard feed, authorised with that truck's device
+  `X-Device-Key`: shipment (incl. per-product shelf life + setpoint), latest reading, last 5 alerts
+  with LLM explanations, AI status
+- `GET /ai/status` -- every AI component's live status, measured scores and usage counts (public);
+  `POST /ai/llm/test` -- admin-JWT one-click LLM round trip (reply, model, latency)
+- `GET /products` -- the 155-product Load Planner catalog (public reference data, like `/categories`)
+- `POST /planner/plan` -- public (pure calculation; the phone wizard uses it). Takes `{products:[{product_id, quantity_kg}], truck_id?, sigma_c?}` and returns pairwise compatibility (Model 5 probability, policy vetoes, reasons), the compatible groups, and each group's recommended setpoint (Model 4, guarded by the physics optimizer) plus the nearest FROSTMIND device category. See "Load Planner" below.
 - `GET /health` -- `model1_status` honestly reflects whether a real Model 1 `.pkl` was found and
   loaded at startup (`"active (scoring live /ingest readings)"` vs.
   `"not-yet-wired (device threshold rule is the live anomaly signal)"`) -- never overclaims
 
 Interactive docs at `http://127.0.0.1:8000/docs` once running.
+
+## Load Planner (Models 4 and 5)
+
+`app/load_planner.py` serves the two models behind `POST /planner/plan`. The admin panel's **Load Planner** page (`web/src/app/planner/page.tsx`) is the UI.
+
+- **Shared code, no skew.** All features, physics and grouping come from `scripts/common/products.py`, imported via `SCRIPTS_DIR` the same way `app/ml.py` imports `model3_shelf_life`.
+- **Graceful loading.** This follows the `_load_model1()` pattern. `models/model4_mixed_setpoint.pkl` and `models/model5_compatibility.pkl` are looked up once at import time.
+  - If Model 5 is missing, pairs are judged by the policy vetoes, the feasibility check, and the rule "optimal temperatures within 2 °C", with `probability: null`.
+  - If Model 4 is missing, setpoints come from the physics optimizer (`method: "physics"`).
+  - `/health` reports `model4_status` / `model5_status` honestly.
+- **Guarded ML.** The Model 4 student's setpoint is clipped into the chance-constrained safe range. If it differs from the physics optimizer by more than `MODEL4_MAX_DISAGREEMENT_C` (0.5 °C), the optimizer's answer is served instead (`method: "physics_fallback"`).
+- **Policy is not ML.** "Medicines never with food" (WHO/EU GDP) and "raw animal food apart from produce/ready-to-eat" (FDA Food Code 3-302.11) are hard vetoes applied on top of Model 5. They were never used as training labels.
+- **σ (reefer fluctuation)** is chosen in this order:
+  1. the request's `sigma_c`;
+  2. the std of the truck's last 500 readings (needs ≥30);
+  3. the real-data default in `data/product_catalog/reefer_fluctuation.json`.
+- **Device mapping.** Each group reports the nearest of the 6 firmware categories, which the ESP32 applies through BLE `set_category`, plus `device_category_within_1c`. If no category is within 1 °C (e.g. bananas at 13.5 °C), the response warns that the setpoint must be set manually, instead of pretending the device can apply it.
+- **Tests:** `tests/test_products.py` covers the physics sanity targets, feature symmetry, the label-leakage guard, DSatur and the student's shift-invariance. `tests/test_planner.py` covers the API behaviour and the no-pkl fallback.
 
 ## Tests
 

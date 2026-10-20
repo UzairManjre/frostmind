@@ -90,7 +90,7 @@ function AnalyticsView() {
           </>
         }
         description="Fleet-wide alert and shipment trends over a trailing window."
-        page={[3, 4]}
+        page={[3, 6]}
         actions={
           <Segmented
             onDark

@@ -4,7 +4,7 @@
 import { BleBridge } from "./ble.js";
 import { STORAGE_KEYS, getApiBase, loadJSON, saveJSON, setApiBase } from "./config.js";
 import { api } from "./api.js";
-import { enqueueReading } from "./idb.js";
+import { clearQueue, enqueueReading } from "./idb.js";
 import { SyncManager } from "./sync.js";
 import { STEP_RENDERERS } from "./wizard.js";
 import { renderDashboard } from "./dashboard.js";
@@ -36,12 +36,13 @@ document.getElementById("save-settings-btn").addEventListener("click", async () 
   }
 });
 
-document.getElementById("reset-btn").addEventListener("click", () => {
+document.getElementById("reset-btn").addEventListener("click", async () => {
   if (!confirm("Clear all local wizard/session state? This does not delete anything on the backend.")) return;
   saveJSON(STORAGE_KEYS.DEVICE, null);
   saveJSON(STORAGE_KEYS.TRUCK, null);
   saveJSON(STORAGE_KEYS.SHIPMENT, null);
   saveJSON(STORAGE_KEYS.WIZARD_STEP, null);
+  await clearQueue().catch(() => {});
   window.location.reload();
 });
 

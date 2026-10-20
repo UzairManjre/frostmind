@@ -72,3 +72,21 @@ OLLAMA_MODEL = os.environ.get("FROSTMIND_OLLAMA_MODEL", "hf.co/unsloth/gemma-4-E
 # 30s left almost no margin; a background task has no user waiting on it, so there's no cost to
 # giving it room instead of spuriously falling back on every first call after an idle period.
 OLLAMA_TIMEOUT_SECONDS = float(os.environ.get("FROSTMIND_OLLAMA_TIMEOUT_SECONDS", "45"))
+
+# Load Planner -- Model 4 (mixed-load setpoint) + Model 5 (co-shipment compatibility). See
+# app/load_planner.py. Both .pkl files are optional at boot: without them the planner still works
+# on the physics optimizer + policy rules alone (and says so in every response / in /health).
+PRODUCT_CATALOG_PATH = PROJECT_ROOT / "data" / "product_catalog" / "product_catalog_clean.csv"
+REEFER_FLUCTUATION_PATH = PROJECT_ROOT / "data" / "product_catalog" / "reefer_fluctuation.json"
+MODEL4_PKL_PATH = MODELS_DIR / "model4_mixed_setpoint.pkl"
+MODEL4_METRICS_PATH = MODELS_DIR / "model4_mixed_setpoint_metrics.json"
+MODEL5_PKL_PATH = MODELS_DIR / "model5_compatibility.pkl"
+MODEL5_METRICS_PATH = MODELS_DIR / "model5_compatibility_metrics.json"
+# Guarded ML: if the Model 4 student disagrees with the physics optimizer by more than this, the
+# optimizer's answer is served instead (method="physics_fallback").
+MODEL4_MAX_DISAGREEMENT_C = 0.5
+# Minimum in-transit readings before a truck's own temperature std is trusted as its sigma.
+PLANNER_MIN_READINGS_FOR_SIGMA = 30
+# Mixed loads: flag a reading as anomalous when it's this far from Model 4's recommended setpoint
+# (same 3 C margin the ESP32's own deviation rule uses).
+MIXED_LOAD_DEVIATION_C = 3.0

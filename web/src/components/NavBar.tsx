@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { BellIcon, ChartIcon, FileIcon, LogoutIcon, MenuIcon, SnowflakeIcon, TruckIcon } from "@/components/Icons";
+import { BellIcon, BoxIcon, ChartIcon, FileIcon, LogoutIcon, MenuIcon, SnowflakeIcon, SparkIcon, TruckIcon } from "@/components/Icons";
 import { Idx } from "@/components/ui";
 
 const LINKS = [
@@ -12,6 +12,8 @@ const LINKS = [
   { href: "/alerts", label: "Alerts", icon: BellIcon },
   { href: "/analytics", label: "Analytics", icon: ChartIcon },
   { href: "/reports", label: "Reports", icon: FileIcon },
+  { href: "/planner", label: "Load Planner", icon: BoxIcon },
+  { href: "/ai", label: "AI Models", icon: SparkIcon },
 ];
 
 function isActive(pathname: string, href: string) {

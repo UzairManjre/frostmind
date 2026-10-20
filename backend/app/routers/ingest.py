@@ -40,12 +40,14 @@ from app.config import (
     DOOR_ALERT_COOLDOWN_SECONDS,
     DOOR_OPEN_ALERT_SECONDS,
     DOOR_TRUE_MEANS_OPEN,
+    MIXED_LOAD_DEVIATION_C,
     MODEL1_ROLLING_WINDOW,
     SHELF_LIFE_CRITICAL_FRACTION,
     SHELF_LIFE_WARNING_FRACTION,
 )
 from app.database import get_db
 from app.llm_orchestrator import run_alert_reasoning_background
+from app.load_planner import product_shelf_life
 from app.logging_config import get_logger, log_event
 from app.ml import MODEL1_ACTIVE, PRODUCT_LIBRARY, compute_shelf_life, score_with_model1
 from app.models import Alert, AlertSeverity, AlertType, Device, SensorReading, Shipment, ShipmentStatus
@@ -254,14 +256,23 @@ def ingest(
         #    flag or Model 1.
         deviation_flagged = False
         rate_flagged = False
+        setpoint_flagged = False
+        # Mixed loads compare against Model 4's recommended setpoint for the actual products on
+        # board, not the generic category reference temperature.
+        ref_temp_c = (
+            shipment.recommended_setpoint_c
+            if shipment.recommended_setpoint_c is not None
+            else PRODUCT_LIBRARY[shipment.category.value].reference_temp_c
+        )
         if shipment.alert_deviation_threshold_override is not None:
-            ref_temp_c = PRODUCT_LIBRARY[shipment.category.value].reference_temp_c
             deviation_flagged = abs(reading.temp_c - ref_temp_c) > shipment.alert_deviation_threshold_override
+        elif shipment.recommended_setpoint_c is not None:
+            setpoint_flagged = abs(reading.temp_c - ref_temp_c) > MIXED_LOAD_DEVIATION_C
         if shipment.alert_rate_threshold_override is not None and reading.rate_of_change is not None:
             rate_flagged = abs(reading.rate_of_change) > shipment.alert_rate_threshold_override
 
         reading.anomaly_score = model1_score
-        reading.is_anomaly = device_flagged or model1_flagged or deviation_flagged or rate_flagged
+        reading.is_anomaly = device_flagged or model1_flagged or deviation_flagged or rate_flagged or setpoint_flagged
 
         if reading.is_anomaly:
             anomalies_flagged += 1
@@ -281,9 +292,9 @@ def ingest(
                     )
                 if rate_flagged:
                     sources.append(f"rate-override(|roc| > {shipment.alert_rate_threshold_override})")
-                message = "Anomaly alert [" + ", ".join(sources) + "]"
-                if not MODEL1_ACTIVE:
-                    message += " -- Model 1 ML scoring not yet wired up, see backend/README.md 'Model 1 status'"
+                if setpoint_flagged:
+                    sources.append(f"recommended-setpoint(|{reading.temp_c:.1f}C - {ref_temp_c:.1f}C| > {MIXED_LOAD_DEVIATION_C}C)")
+                message = f"Anomaly alert at {reading.temp_c:.1f}C [" + ", ".join(sources) + "]"
                 alert_row = Alert(
                     shipment_id=shipment.id,
                     ts=reading.ts,
@@ -347,6 +358,17 @@ def ingest(
         hours = [(h.ts - ref_time).total_seconds() / 3600.0 for h in history]
         temps = [h.temp_c for h in history]
         consumed, remaining = compute_shelf_life(shipment.category.value, temps, hours, temps[-1])
+        limiting_product = None
+        if shipment.products:
+            # Mixed load: shelf life per product; the shipment-level number is the most
+            # perishable product's (that's what limits the whole load), and alerts name it.
+            per_product = product_shelf_life(shipment.products, temps, hours, temps[-1])
+            shipment.product_shelf_life = per_product
+            if per_product:
+                worst = max(per_product, key=lambda p: p["consumed_fraction"])
+                consumed = worst["consumed_fraction"]
+                remaining = min((p["remaining_hours"] for p in per_product if p["remaining_hours"] is not None), default=remaining)
+                limiting_product = worst["name"]
         shipment.shelf_life_consumed_fraction = consumed
         shipment.shelf_life_remaining_hours = remaining
         shipment.shelf_life_updated_at = datetime.now(timezone.utc)
@@ -365,7 +387,7 @@ def ingest(
                 shipment_id=shipment.id,
                 type=AlertType.shelf_life_threshold,
                 severity=AlertSeverity.medium,
-                message=f"Shelf life warning: {consumed * 100:.1f}% consumed ({shipment.category.value})",
+                message=f"Shelf life warning: {consumed * 100:.1f}% consumed ({limiting_product or shipment.category.value})",
             )
             db.add(alert_row)
             new_alerts.append(alert_row)
@@ -384,7 +406,7 @@ def ingest(
                 shipment_id=shipment.id,
                 type=AlertType.shelf_life_threshold,
                 severity=AlertSeverity.critical,
-                message=f"Shelf life EXCEEDED: {consumed * 100:.1f}% consumed ({shipment.category.value})",
+                message=f"Shelf life EXCEEDED: {consumed * 100:.1f}% consumed ({limiting_product or shipment.category.value})",
             )
             db.add(alert_row)
             new_alerts.append(alert_row)
@@ -405,7 +427,14 @@ def ingest(
     # has a real, committed id -- one background task per alert, each opens its own DB session
     # (see run_alert_reasoning_background's docstring for why). Never awaited here; this returns
     # immediately regardless of how long Ollama takes or whether it's reachable at all.
-    for alert_row in new_alerts:
+    # One explanation per incident: a batch can contain many alerts of the same type (a backlog
+    # flush, or a long excursion), and each LLM call takes ~10-20 s on a local model -- explaining
+    # every one would queue minutes of work and leave the newest (the ones people look at)
+    # waiting last. So explain the newest alert of each type in this batch, newest first.
+    newest_per_type = {}
+    for alert_row in sorted(new_alerts, key=lambda a: a.ts or datetime.min.replace(tzinfo=timezone.utc)):
+        newest_per_type[alert_row.type] = alert_row
+    for alert_row in sorted(newest_per_type.values(), key=lambda a: a.ts or datetime.min.replace(tzinfo=timezone.utc), reverse=True):
         background_tasks.add_task(run_alert_reasoning_background, alert_row.id)
 
     return IngestResult(
