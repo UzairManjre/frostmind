@@ -60,11 +60,14 @@
 
 // ===========================================================================
 // Pin assignments (fixed by the hardware plan -- not tuning constants)
+// The board is a Seeed XIAO ESP32-S3. Its holes are labelled D0-D10, and Dn is NOT GPIOn
+// (D3=GPIO4, D4=GPIO5, D5=GPIO6, D6=GPIO43, D8=GPIO7, ...). The pad each pin is on is noted
+// below -- wire by those labels. The XIAO ESP32-C3 looks identical but maps differently.
 // ===========================================================================
-static const uint8_t PIN_DHT = 7;     // DHT11/DHT22 single-wire DATA pin (moved from GPIO8: matches the rewired board, confirmed by a pin scan)
-static const uint8_t PIN_REED = 5;    // INPUT_PULLUP, HIGH = door open (see loop()) -- moved from GPIO4 to match the rebuilt board
-static const uint16_t PIN_IR_LED = 6;
-static const uint8_t PIN_STATUS_LEDS = 4; // WS2812/WS281x strip DIN (the original reed pin, free since the rebuild)
+static const uint8_t PIN_DHT = 7;     // XIAO pad D8. DHT11/DHT22 single-wire DATA pin (moved from GPIO8: matches the rewired board, confirmed by a pin scan)
+static const uint8_t PIN_REED = 5;    // XIAO pad D4. INPUT_PULLUP, HIGH = door open (see loop()) -- moved from GPIO4 to match the rebuilt board
+static const uint16_t PIN_IR_LED = 6;    // XIAO pad D5 (not D6 -- that's GPIO43)
+static const uint8_t PIN_STATUS_LEDS = 4; // XIAO pad D3. WS2812/WS281x strip DIN (the original reed pin, free since the rebuild)
 // GPIO8 is free (the original DHT pin before the board was rebuilt).
 // GPIO9 is free -- it was SCL back when this used an I2C SHT31-D.
 

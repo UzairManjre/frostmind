@@ -8,7 +8,7 @@ The doc `FROSTMIND_MVP_Implementation_and_AI_Plan (1).md` already cross-referenc
 
 | Part | Spec | Qty | Note |
 |---|---|---|---|
-| ESP32-S3 dev board | any ESP32-S3 devkit | 1 | USB-C for both power and flashing |
+| Seeed XIAO ESP32-S3 | ESP32-S3R8 (8 MB PSRAM), USB-C | 1 | USB-C for both power and flashing. Not the XIAO ESP32-C3: same shape, different pin mapping |
 | DHT11 or DHT22 breakout | single-wire, 3-pin (VCC/GND/DATA) | 1 | check the part markings — DHT11 and DHT22 use the same wiring, different `#define` in firmware |
 | MC-38 reed switch | 2-wire, N.O. + magnet | 1 | door/lid sensor |
 | IR LED | 940nm, 5mm | 1 | transmit only — this build has no receiver |
@@ -23,16 +23,19 @@ The doc `FROSTMIND_MVP_Implementation_and_AI_Plan (1).md` already cross-referenc
 
 Fixed by the firmware — these are the actual constants in `firmware/frostmind_main/frostmind_main.ino`. Wire to match exactly.
 
-| ESP32-S3 pin | Function | Goes to |
-|---|---|---|
-| 3V3 | power | DHT VCC |
-| 5V (a.k.a. 5Vin / VBUS) | power from USB | LED strip 5V |
-| GND | ground | DHT GND, reed switch, IR LED return, LED strip GND |
-| GPIO7 | single-wire digital | DHT DATA (moved from GPIO8 to match the rebuilt board) |
-| GPIO5 | digital in, `INPUT_PULLUP` | reed switch (other leg -> GND) -- moved from GPIO4 to match the rebuilt board |
-| GPIO6 | digital out | resistor -> IR LED anode |
-| GPIO4 | digital out (RMT) | LED strip DIN (the original reed-switch pin, reused) |
-| GPIO8, GPIO9 | free, unused | GPIO8 was the original DHT pin; GPIO9 was I2C SCL back when this assumed an SHT31-D |
+**Wire by the D-label printed next to each hole of the XIAO.** On the XIAO ESP32-S3, D*n* is **not** GPIO *n*: D3 = GPIO4, D4 = GPIO5, D5 = GPIO6, D6 = GPIO43, D8 = GPIO7. Putting a wire in "D6" because the firmware says GPIO6 is the classic mistake, and it's why the IR LED once never lit.
+
+| XIAO pad | ESP32-S3 pin | Function | Goes to |
+|---|---|---|---|
+| 3V3 | - | power | DHT VCC |
+| 5V | - | power from USB | LED strip 5V |
+| GND | - | ground | DHT GND, reed switch, IR LED short leg, LED strip GND |
+| **D8** | GPIO7 | single-wire digital | DHT DATA |
+| **D4** | GPIO5 | digital in, `INPUT_PULLUP` | reed switch (other leg -> GND) |
+| **D5** | GPIO6 | digital out | IR LED long leg (anode) |
+| **D3** | GPIO4 | digital out (RMT) | LED strip DIN |
+| D9, D10 | GPIO8, GPIO9 | free, unused | - |
+| D0, D1, D2, D6, D7 | GPIO1, 2, 3, 43, 44 | free, leave empty | D6/D7 are the UART0 TX/RX pins |
 
 **There is no IR receiver in this build** (GPIO5, once reserved for a TSOP38238, now carries the reed switch). This project is not using IRDB, LIRC, or any IR receiver — not deferred, ruled out. See `FROSTMIND_Phase2_Implementation_Plan.md` §3 and the MVP plan's §5 for what that means for AC pairing.
 
@@ -40,11 +43,11 @@ Fixed by the firmware — these are the actual constants in `firmware/frostmind_
 
 ## 3. Wiring, in words
 
-- **DHT11/DHT22:** VCC->3V3, GND->GND, DATA->GPIO7. Only 3 wires — there's no SDA/SCL to mix up.
-- **Reed switch:** one leg->GPIO5, other leg->GND. No external resistor — the firmware enables the internal pull-up (`INPUT_PULLUP`), and **HIGH means the door is open** (magnet away → switch open → pin pulled up). This was corrected after real-hardware testing; see `loop()` in the `.ino`.
-- **IR LED:** GPIO6 -> resistor (100-220 ohm) -> LED anode (longer leg) -> cathode -> GND. Aim broadly at the AC's front panel; a meter or two away is fine for direct-drive.
-- **LED strip (WS2812, GRB):** strip 5V -> board 5V, strip GND -> GND, strip DIN -> GPIO4. Use the strip's **input** end: the arrows printed on the strip point away from it and the pad says `DIN`, not `DO`. Wired to the wrong end, nothing lights. A 300-500 ohm resistor in series on DIN is good practice but not required for a short jumper. Brightness is capped in firmware, so 8 LEDs stay under ~75 mA and USB power is enough. What each colour means: `firmware/frostmind_main/README.md` "Status light strip".
-- **GPIO2, GPIO8:** leave unconnected (in particular, no wire from GPIO2 to 3V3).
+- **DHT11/DHT22:** VCC->3V3, GND->GND, DATA->D8 (GPIO7). Only 3 wires — there's no SDA/SCL to mix up.
+- **Reed switch:** one leg->D4 (GPIO5), other leg->GND. No external resistor — the firmware enables the internal pull-up (`INPUT_PULLUP`), and **HIGH means the door is open** (magnet away → switch open → pin pulled up). This was corrected after real-hardware testing; see `loop()` in the `.ino`.
+- **IR LED:** D5 (GPIO6) -> resistor (100-220 ohm, optional for a short test) -> LED anode (longer leg) -> cathode -> GND. Aim broadly at the AC's front panel; a meter or two away is fine for direct-drive.
+- **LED strip (WS2812, GRB):** strip 5V -> board 5V, strip GND -> GND, strip DIN -> D3 (GPIO4). Use the strip's **input** end: the arrows printed on the strip point away from it and the pad says `DIN`, not `DO`. Wired to the wrong end, nothing lights. A 300-500 ohm resistor in series on DIN is good practice but not required for a short jumper. Brightness is capped in firmware, so 8 LEDs stay under ~75 mA and USB power is enough. What each colour means: `firmware/frostmind_main/README.md` "Status light strip".
+- **Everything else (D0, D1, D2, D6, D7, D9, D10):** leave empty. In particular, no wire from D1 (GPIO2) to 3V3.
 - **Power:** USB-C from whichever machine you're flashing from.
 
 (The published artifact has an actual wiring diagram if you want the visual instead of the text version above.)

@@ -14,13 +14,17 @@ algorithm) / §6 Phase A for the design this implements.
 
 ## Wiring
 
-| Signal | ESP32-S3 pin | Notes |
-|---|---|---|
-| DHT11/DHT22 DATA | GPIO7 | single-wire, `FROSTMIND_DHT_TYPE` selects which (moved from GPIO8 to match the rebuilt board) |
-| MC-38 reed switch | GPIO5 (moved from GPIO4 to match the rebuilt board) | `INPUT_PULLUP`, **HIGH = door open** (corrected after real-hardware testing showed the original LOW=open assumption was backwards -- see `loop()`'s comment in the .ino) |
-| IR transmitter (LED driver) | GPIO6 | transmit-only, no IR receiver in this build |
-| WS2812/WS281x RGB light strip DIN | GPIO4 | status lights, **GRB** colour order; strip 5V -> board 5V, GND -> GND (the original reed-switch pin, reused) -- see "Status light strip" below |
-| (free) | GPIO8, GPIO9 | GPIO8 was the original DHT pin; GPIO9 was SCL back when this used an I2C SHT31-D |
+**Board: Seeed XIAO ESP32-S3.** Wire by the **D-label** printed next to each hole. On this board
+D*n* is **not** GPIO *n* (D6 is GPIO43, for example), and the XIAO ESP32-C3 pinout looks
+identical but maps differently, so don't use that one.
+
+| Signal | XIAO pad | ESP32-S3 pin | Notes |
+|---|---|---|---|
+| DHT11/DHT22 DATA | **D8** | GPIO7 | single-wire, `FROSTMIND_DHT_TYPE` selects which (moved from GPIO8 to match the rebuilt board) |
+| MC-38 reed switch | **D4** | GPIO5 (moved from GPIO4 to match the rebuilt board) | `INPUT_PULLUP`, **HIGH = door open** (corrected after real-hardware testing showed the original LOW=open assumption was backwards -- see `loop()`'s comment in the .ino) |
+| IR transmitter (LED driver) | **D5** | GPIO6 | transmit-only, no IR receiver in this build |
+| WS2812/WS281x RGB light strip DIN | **D3** | GPIO4 | status lights, **GRB** colour order; strip 5V -> board 5V, GND -> GND (the original reed-switch pin, reused) -- see "Status light strip" below |
+| (free) | D9, D10 | GPIO8, GPIO9 | GPIO8 was the original DHT pin; GPIO9 was SCL back when this used an I2C SHT31-D |
 
 The sensor actually on hand has 3 pins (VCC/GND/DATA), which is a
 DHT11/DHT22/AM2302, not the I2C SHT31-D earlier drafts of this project
@@ -268,7 +272,7 @@ see that something is wrong. `STATUS_LED_COUNT` (default 8) is the number of LED
 beyond it stay dark. `STATUS_LED_BRIGHTNESS` (default 40/255) caps every channel, which keeps 8
 LEDs at full white to about 75 mA, so USB power is enough.
 
-**Wiring:** strip **5V** → board **5V** pin, **GND** → **GND**, **DIN** → **GPIO4**. Connect to the
+**Wiring:** strip **5V** → board **5V** pin, **GND** → **GND**, **DIN** → pad **D3** (GPIO4). Connect to the
 strip's *input* end: the small arrows printed on the strip point away from it, and the pad says
 `DIN` (not `DO`/`DOUT`). A 300-500 Ω resistor in series on DIN is good practice but not required
 for a short wire.
