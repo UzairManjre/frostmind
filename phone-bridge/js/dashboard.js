@@ -73,14 +73,15 @@ export function renderDashboard(ctx) {
         <button id="identify-btn" class="secondary">Flash the device's lights (identify)</button>
         <details>
           <summary>What the lights mean</summary>
+          <p class="hint" style="margin:0 0 .5rem">One look at a time, following the trip:</p>
           <ul class="legend">
-            <li><span class="sw sw-bar"></span><span><b>Shelf-life bar</b> -- length = shelf life left (Model 3, the most perishable product). The colour slides mint &rarr; lime &rarr; amber &rarr; coral as it drains; a sheen runs along it.</span></li>
-            <li><span class="sw sw-red"></span><span><b>Whole strip coral</b> -- device alarm: temperature more than 3 °C off, changing fast, or door open over 60 s. It beats like a heart for a few seconds, then breathes slowly while the alarm lasts.</span></li>
-            <li><span class="sw sw-ai"></span><span><b>Blue-violet-pink wave</b> -- the server's AI raised an alert in the last 10 min. Read the explanation above.</span></li>
-            <li><span class="sw sw-amber"></span><span><b>Amber light from both ends</b> -- door open.</span></li>
-            <li><span class="sw sw-blue"></span><span><b>Blue beacon breathing at the centre</b> -- waiting for the phone. <b>Ice comet sweeping</b> -- AC auto-pairing.</span></li>
-            <li><span class="sw sw-green"></span><span><b>Mint / amber aura</b> -- connected, no shipment data yet: temperature on target / drifting.</span></li>
-            <li><span class="sw sw-white"></span><span><b>Moments</b> -- frost bloom at boot, two lights meeting when the phone connects, a ripple when a command arrives, a mint sweep / a shake when AC pairing succeeds / fails.</span></li>
+            <li><span class="sw sw-blue"></span><span><b>Waiting</b> -- blue light breathing at the centre: connect a phone. Nothing else shows until one connects; nobody would see an alarm.</span></li>
+            <li><span class="sw sw-setup"></span><span><b>Setup</b> -- three segments, phone | product | AC. Each turns mint when done; the next one breathes. An ice comet sweeps while the AC pairs.</span></li>
+            <li><span class="sw sw-bar"></span><span><b>Live, idle</b> -- just the shelf-life bar: length = shelf life left (Model 3, the most perishable product), colour sliding mint &rarr; lime &rarr; amber &rarr; coral as it drains.</span></li>
+            <li><span class="sw sw-red"></span><span><b>Alarm</b> -- temperature more than 3 °C off, changing fast, or door open over 60 s: a coral heartbeat, then the bar turns coral and breathes until it clears.</span></li>
+            <li><span class="sw sw-amber"></span><span><b>Door open</b> -- amber light spilling in from both ends, until it closes.</span></li>
+            <li><span class="sw sw-ai"></span><span><b>AI alert</b> -- a blue-violet-pink wave when the server's AI flags something (again every 2 min while active). Read the explanation above.</span></li>
+            <li><span class="sw sw-white"></span><span><b>Moments</b> -- frost bloom at boot, two lights meeting when the phone connects, a ripple when a command arrives, a sweep when the trip goes live.</span></li>
             <li><span class="sw sw-rainbow"></span><span><b>Spectrum</b> -- "identify" from this phone: it's the box you're connected to.</span></li>
           </ul>
         </details>
@@ -220,28 +221,24 @@ export function renderDashboard(ctx) {
     renderStripNow();
   }
 
-  // Mirrors the firmware's priority order (drawLiveStatus), so the driver can check the box
-  // shows what the phone thinks it should.
+  // Mirrors the firmware's workflow (drawLiveStatus in frostmind_main.ino): one look at a time,
+  // most important first, so the driver can check the box shows what the phone thinks it should.
   function renderStripNow() {
+    const ai = ledStatus && ledStatus.alert !== "none" ? " An AI wave plays when an alert arrives, and every 2 min while it's active." : "";
     if (!ctx.ble.connected) {
-      stripNowEl.textContent = "blue beacon -- waiting for this phone to reconnect";
-      return;
-    }
-    let base;
-    if (ledStatus && ledStatus.shelf >= 0) {
+      stripNowEl.textContent = "blue beacon -- waiting for this phone to reconnect (no alerts until then)";
+    } else if (lastReading?.alert) {
+      stripNowEl.textContent = "alarm -- a coral heartbeat, then the bar turns coral and breathes until it clears." + ai;
+    } else if (lastReading?.door) {
+      stripNowEl.textContent = "door open -- amber light from both ends." + ai;
+    } else if (ledStatus && ledStatus.shelf > 0) {
       const colour = ledStatus.shelf > 67 ? "mint" : ledStatus.shelf > 40 ? "lime" : ledStatus.shelf > 15 ? "amber" : "coral";
-      base = ledStatus.shelf > 0 ? `${colour} bar, ${ledStatus.shelf}% shelf life left` : "whole strip glowing coral, shelf life used up";
+      stripNowEl.textContent = `${colour} bar, ${ledStatus.shelf}% shelf life left.` + ai;
+    } else if (ledStatus && ledStatus.shelf === 0) {
+      stripNowEl.textContent = "whole strip glowing coral -- shelf life used up." + ai;
     } else {
-      base = "mint/amber aura -- temperature vs setpoint (no shelf-life data yet)";
+      stripNowEl.textContent = "temperature aura (mint on target, amber drifting) until the first shelf-life number syncs." + ai;
     }
-    if (lastReading?.alert) {
-      stripNowEl.textContent = "whole strip coral -- device alarm";
-      return;
-    }
-    let overlay = "";
-    if (ledStatus && ledStatus.alert !== "none") overlay = " + blue-violet-pink AI wave";
-    else if (lastReading?.door) overlay = " + amber light from both ends (door open)";
-    stripNowEl.textContent = base + overlay;
   }
 
   node.querySelector("#identify-btn").addEventListener("click", async () => {
@@ -425,6 +422,10 @@ export function renderDashboard(ctx) {
       sendLedStatus();
     } catch (err) {
       aiUpdatedEl.textContent = `AI feed unavailable: ${err.status || ""} ${err.message.slice(0, 80)}`;
+      // Still tell the box this dashboard is live, so it shows the live view rather than the setup
+      // checklist (with the last shelf life we had, or none yet).
+      if (!ledStatus) ledStatus = { cmd: "led", shelf: -1, alert: "none" };
+      sendLedStatus();
     }
   }
   refreshLive();

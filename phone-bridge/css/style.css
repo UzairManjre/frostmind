@@ -640,3 +640,4 @@ button.cart-remove:hover { color: var(--danger); border-color: var(--danger); }
 .sw-green { background: linear-gradient(90deg, #2ef29c, #45d4ff); }
 .sw-white { background: radial-gradient(circle, #ffffff, #cff6ff 50%, #45d4ff); }
 .sw-rainbow { background: linear-gradient(90deg, #ff3b4e, #ffa62b, #39d98a, #3b6bff, #b04dff); }
+.sw-setup { background: linear-gradient(90deg, #2ef29c 0 30%, transparent 30% 36%, #45d4ff 36% 64%, transparent 64% 70%, rgba(36, 87, 255, 0.45) 70%); }

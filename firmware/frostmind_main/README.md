@@ -286,28 +286,39 @@ strip's *input* end: the small arrows printed on the strip point away from it, a
 `DIN` (not `DO`/`DOUT`). A 300-500 Ω resistor in series on DIN is good practice but not required
 for a short wire.
 
-What it shows, highest priority first (the same order as `drawLiveStatus()` in the `.ino`):
+**One look at a time.** Nothing is ever layered on top of something else, and a moment always
+plays to its end (the next one waits in a short queue). The strip follows the box through a
+workflow (`currentLedStage()` / `drawLiveStatus()` in the `.ino`):
 
-| Look | Meaning |
+| Stage | When | Look |
+|---|---|---|
+| **Waiting** | no phone connected | **Beacon**: a glacier-blue light breathing at the centre. Nothing else, not even alarms: nobody would see them |
+| **Setup** | phone connected, trip not live yet | **Checklist**: three segments, phone, product, AC. Done steps glow mint, the next one breathes ice. All three mint = ready to go live. Still no alarms: no product or setpoint chosen yet |
+| **Pairing** | AC auto-pairing running | **Ice comet** sweeping end to end over a faint progress fill, then a **mint sweep** (paired) or a **coral shake**, like a wrong password (no match) |
+| **Live** | the phone's dashboard is sending shelf life | see below |
+
+In **Live**, idle is **just the shelf-life bar**: length = Model 3 shelf life left (sub-pixel), colour
+sliding mint → lime → amber → coral as it drains, with a sheen running along it. A problem replaces
+it, most important first:
+1. **Device alarm** (temperature >3 °C off the category setpoint, changing >3 °C/min, or door open
+   >60 s): the whole strip beats coral like a heart for 8 s (`ALARM_URGENT_MS`). Then the bar comes
+   back **coral and breathing**, with the empty part glowing dim coral, until the alarm clears. A
+   merely low bar is short, steady and has a blue track.
+2. **Door open** (not yet an alarm): amber light spilling in from both ends, until it closes.
+
+**AI alert:** when the backend's AI flags something, a blue-violet-pink wave swells three times
+(4.5 s), then the bar returns. It replays every 2 min (`AI_REMINDER_MS`) while the alert is active.
+The explanation is on the phone.
+
+Moments (queued, about a second each):
+
+| Moment | When |
 |---|---|
-| **Frost bloom**: light blooms out from the centre, white core to glacier-blue edge | booted and ready |
-| **Handshake**: two lights glide in from the ends, meet and flare | phone connected over Bluetooth |
-| **Ripple**: one ring of light running outward | a command from the phone arrived (e.g. `set_category`) |
-| **Mint sweep** / **shake** (a coral light shaking side to side, like a wrong password) | AC auto-pairing matched / no match |
-| **Spectrum**: the hue circle turning along the strip, a white glint passing through, 5 s | `identify` from the phone: this is the box you're connected to |
-| **Coral alarm**: the whole strip turns coral, beats like a heart for 8 s (`ALARM_URGENT_MS`), then breathes slowly for as long as it lasts | device alarm: the same rule that fires the IR intervention. Temperature >3 °C off the category setpoint, changing >3 °C/min, or door open >60 s |
-| **Blue-violet-pink wave** flowing along the strip every 4 s (2.6 s if critical) | the backend's AI raised an alert in the last 10 min (e.g. drift from Model 4's setpoint, shelf-life threshold). The explanation is on the phone |
-| **Amber light spilling in from both ends** | door open (not yet an alarm) |
-| **Ice comet** sweeping end to end over a faint fill | AC auto-pairing running; the fill shows progress through the candidates |
-| **Beacon**: a glacier-blue light breathing at the centre | waiting for the phone (Bluetooth not connected) |
-| **Shelf-life bar** | shipment running: length = Model 3 shelf life **left** (sub-pixel). Colour slides mint → lime → amber → coral as it drains; a sheen runs along it. Whole strip glowing coral = used up |
-| **Thermal aura**: a slowly drifting two-tone glow | connected, no shipment data yet. Mint/ice = on target, warming to amber as it drifts, coral past the alarm threshold |
-| Small warm glow | no sensor reading yet |
-
-A device alarm takes the whole strip (it never flips back to the scene underneath). The AI wave
-and the door light are blended over the scene, so the bar underneath stays readable: "mint bar +
-an AI wave every few seconds" reads as "plenty of shelf life left, but the AI has flagged
-something".
+| **Frost bloom**: light blooms out from the centre | boot |
+| **Handshake**: two lights glide in from the ends, meet and flare | phone connected |
+| **Ripple**: one ring of light running outward | a command arrived (`set_category` also ticks the checklist's product step) |
+| **Go live**: a light runs the strip and leaves the bar behind | the dashboard starts sending shelf life |
+| **Spectrum**: the hue circle turning, a white glint passing through, 5 s | `identify` from the phone |
 
 Shelf life and the backend alert come from the phone (`{"cmd":"led",...}`). The device can't
 compute them itself because the product data and the models live on the server. Everything else
@@ -315,7 +326,7 @@ is the device's own state, so the strip still works without a phone.
 
 Bench checks:
 - `g`: plain red, green, blue, white for 1 s each. If the first colour isn't red, the strip isn't GRB.
-- `d`: every look above, 4.5 s each, with its meaning printed to Serial. Good for a demo.
+- `d`: the whole workflow in order, 4.5 s per look, with each meaning printed to Serial. Good for a demo.
 
 ## Threshold-rule alert logic (Model 1, Stage 1 — MVP plan §4)
 

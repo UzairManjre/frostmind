@@ -104,7 +104,8 @@ static const int STATUS_LED_COUNT = 11;               // LEDs on the strip (ours
 static const uint8_t STATUS_LED_BRIGHTNESS = 80;      // 0-255 cap after gamma; the looks are mostly deep colours, so 11 LEDs stay well under 200 mA on USB 5V
 static const unsigned long STATUS_LED_FRAME_MS = 16;  // ~60 fps: what makes motion read as gliding rather than stepping
 static const unsigned long LED_CROSSFADE_MS = 450;    // every change of scene dissolves over this long instead of cutting
-static const unsigned long ALARM_URGENT_MS = 8000;    // a new device alarm beats like a heart this long, then settles into a slow breath
+static const unsigned long ALARM_URGENT_MS = 8000;    // a new device alarm beats like a heart this long, then the bar turns coral and breathes
+static const unsigned long AI_REMINDER_MS = 2UL * 60UL * 1000UL; // an AI alert's wave replays this often while the alert stays active
 static const unsigned long PHONE_STATUS_STALE_MS = 2UL * 60UL * 1000UL; // phone re-sends shelf life/alerts every ~10 s; older than this isn't shown
 static const float TEMP_DRIFT_WARN_C = 1.5f;          // the thermal aura warms from mint toward amber past this; coral past the 3 C alarm
 static const unsigned long LED_DEMO_STEP_MS = 4500;   // serial 'd': how long each look of the demo is shown
@@ -259,11 +260,16 @@ unsigned long lastLedFrameMs = 0;
 int ledSceneKey = -1;
 unsigned long ledFadeStartMs = 0;
 
-// One-shot patterns that briefly take over the whole strip, then hand back to the normal view.
-enum LedEvent { LE_NONE, LE_BOOT, LE_CONNECTED, LE_COMMAND_OK, LE_PAIR_MATCHED, LE_PAIR_NO_MATCH, LE_IDENTIFY, LE_COLOUR_TEST };
+// Moments: short animations that take over the whole strip, then hand back. Queued, so one never
+// cuts another off.
+enum LedEvent { LE_NONE, LE_BOOT, LE_CONNECTED, LE_COMMAND_OK, LE_PAIR_MATCHED, LE_PAIR_NO_MATCH, LE_IDENTIFY, LE_COLOUR_TEST, LE_GO_LIVE, LE_AI_ALERT };
 LedEvent ledEvent = LE_NONE;
 unsigned long ledEventStartMs = 0;
 unsigned long ledEventDurationMs = 0;
+static const int LED_QUEUE_LEN = 4;
+LedEvent ledQueue[LED_QUEUE_LEN];
+unsigned long ledQueueDurationMs[LED_QUEUE_LEN];
+int ledQueueCount = 0;
 
 // Forwarded by the phone ({"cmd":"led",...}) from the backend: Model 3 shelf life LEFT and the
 // newest backend alert (Model 4 setpoint drift, shelf-life threshold, ...). The device can't
@@ -275,11 +281,21 @@ bool phoneStatusSeen = false;
 
 // The device's own view, refreshed every sensor sample in loop().
 bool ledLocalAlert = false;      // same tempAlert || doorAlert that fires the IR intervention
-unsigned long ledAlarmSinceMs = 0; // when the current alarm started
 bool ledTempValid = false;
 float ledTempDeviationC = 0.0f;  // temp - category setpoint
 
-// Serial 'd': steps through every pattern with its meaning printed, for demos.
+// The strip follows the box through a workflow (see currentLedStage()): WAITING (no phone) ->
+// SETUP (phone | product | AC checklist) -> PAIRING (AC sweep, back to SETUP) -> LIVE (the
+// phone's dashboard is sending shelf life). Problems are only shown in LIVE: with no phone
+// connected nobody would see them, and during setup there's no product or setpoint yet.
+enum LedStage { STAGE_WAITING, STAGE_SETUP, STAGE_PAIRING, STAGE_LIVE };
+LedStage ledStage = STAGE_WAITING;
+bool setupProductDone = false;   // set_category received for this trip
+bool ledAlarmVisible = false;    // the alarm look is on the strip right now
+unsigned long ledAlarmShownMs = 0;
+unsigned long lastAiMomentMs = 0;
+
+// Serial 'd': steps through the whole workflow with each look's meaning printed, for demos.
 bool ledDemoActive = false;
 unsigned long ledDemoStartMs = 0;
 int ledDemoLastStep = -1;
@@ -628,22 +644,30 @@ void logCsvRow(unsigned long nowMs, float tempC, float humidity, bool doorIsOpen
 // rgbLedWrite() uses for one LED), so there's no extra library; RMT times the
 // bits in hardware. Every frame is drawn in floating point, lights sit at
 // sub-pixel positions (a moving light glides between LEDs instead of hopping),
-// every change of scene dissolves over LED_CROSSFADE_MS, and the output is
+// every change of look dissolves over LED_CROSSFADE_MS, and the output is
 // gamma-corrected and temporally dithered so slow fades stay smooth.
 //
-// Highest priority first:
-//   1. Moments (about a second, then back): boot "frost bloom", phone
-//      "handshake", command "ripple", AC pairing "success sweep" or "shake",
-//      identify "spectrum".
-//   2. Device alarm: the whole strip turns coral -- a heartbeat at first, then a
-//      slow steady breath for as long as the alarm lasts.
-//   3. Alerts blended over the scene so it stays readable underneath: a
-//      blue-violet-pink wave = the backend's AI raised an alert; amber light
-//      spilling in from both ends = door open.
-//   4. The scene: pairing comet; waiting-for-phone beacon; the shelf-life bar
-//      (colour slides mint -> lime -> amber -> coral as it drains, a sheen runs
-//      along it); otherwise a thermal aura (mint/ice on target, warming to
-//      amber as it drifts, coral when out of range).
+// One look at a time: nothing is ever layered on top of something else, and a
+// moment always plays to its end (the next one waits its turn). The strip
+// follows the box through a workflow:
+//   WAITING  no phone connected: a blue beacon, nothing else. No alarms --
+//            nobody would see them.
+//   SETUP    phone connected: a three-step checklist, phone | product | AC.
+//            Done steps glow mint, the next one breathes ice. Still no alarms:
+//            no product or setpoint has been chosen yet.
+//   PAIRING  AC auto-pairing: an ice comet, then a mint sweep (paired) or a
+//            coral shake (no match).
+//   LIVE     the phone's dashboard is sending shelf life. Idle = just the
+//            shelf-life bar (colour slides mint -> lime -> amber -> coral as it
+//            drains). A problem replaces it, most important first: device
+//            alarm (a coral heartbeat, then the bar turns coral and breathes
+//            while it lasts), door open (amber light spilling in from both
+//            ends). A new AI alert from the backend plays a blue-violet-pink
+//            wave, then the bar returns (again every AI_REMINDER_MS while the
+//            alert is active).
+// Moments (a second or so each, queued): boot "frost bloom", phone
+// "handshake", command "ripple", "go live" sweep, AI wave, AC pairing result,
+// identify "spectrum".
 // ===========================================================================
 static const float LED_MID = (STATUS_LED_COUNT - 1) / 2.0f;
 
@@ -736,9 +760,9 @@ void statusLedsShow() {
   rmtWrite(PIN_STATUS_LEDS, statusLedSymbols, i, RMT_WAIT_FOR_EVER); // ~0.35 ms for 11 LEDs
 }
 
-// --- Scenes ----------------------------------------------------------------
+// --- Looks, one per state ---------------------------------------------------
 
-// Waiting for the phone: a glacier-blue light breathing at the centre, widening as it brightens.
+// WAITING: a glacier-blue light breathing at the centre, widening as it brightens.
 void sceneBeacon(unsigned long now) {
   float b = wave01(now, 3200);
   float width = 1.4f + 2.4f * b;
@@ -748,8 +772,44 @@ void sceneBeacon(unsigned long now) {
   }
 }
 
-// AC auto-pairing: an ice comet sweeping end to end (easing at the turns) with a fading tail,
-// over a faint fill showing how far through the candidate list the sweep has got.
+// SETUP: the setup workflow as three segments -- phone | product | AC -- with a dark LED between
+// them. Done steps glow mint, the next step breathes ice, later steps wait faintly. With every
+// step done, the whole checklist glows mint with a sheen running across: ready to go live.
+void sceneSetup(bool productDone, bool acDone, unsigned long now) {
+  const int SEGMENTS = 3;
+  const bool done[SEGMENTS] = {true, productDone, acDone};
+  int next = -1;
+  for (int i = 0; i < SEGMENTS; i++) {
+    if (!done[i]) {
+      next = i;
+      break;
+    }
+  }
+  const int segLen = (STATUS_LED_COUNT - (SEGMENTS - 1)) / SEGMENTS; // 3 LEDs each on an 11-LED strip
+  float breath = wave01(now, 2400);
+  float sheen = (float)(now % 3600) / 3600.0f * (STATUS_LED_COUNT + 4.0f) - 2.0f;
+  for (int p = 0; p < STATUS_LED_COUNT; p++) {
+    int seg = p / (segLen + 1);
+    if (seg >= SEGMENTS) seg = SEGMENTS - 1;
+    if (p % (segLen + 1) == segLen && seg < SEGMENTS - 1) { // the gap between two steps
+      ledScene[p] = {0.0f, 0.0f, 0.0f};
+      continue;
+    }
+    Col c;
+    if (done[seg]) {
+      c = scaleCol(hexCol(PAL_MINT), 0.55f);
+      if (next < 0) c = addCol(c, scaleCol(hexCol(PAL_FROST), 0.35f * glowAt(p, sheen, 1.0f)));
+    } else if (seg == next) {
+      c = scaleCol(mixCol(hexCol(PAL_ICE), hexCol(PAL_FROST), breath * 0.5f), 0.3f + 0.6f * breath);
+    } else {
+      c = scaleCol(hexCol(PAL_GLACIER), 0.2f);
+    }
+    ledScene[p] = c;
+  }
+}
+
+// PAIRING: an ice comet sweeping end to end (easing at the turns) with a fading tail, over a
+// faint fill showing how far through the candidate list the sweep has got.
 void scenePairingComet(float progress, unsigned long now) {
   const unsigned long period = 2600;
   float t = (float)(now % period) / period;
@@ -769,10 +829,10 @@ Col shelfColour(int pctLeft) {
   return gradientAt(kShelfStops, 4, pctLeft / 100.0f, false);
 }
 
-// Shipment running: shelf life LEFT as a bar, sub-pixel so 72 % really looks like 72 %. The
-// colour slides mint -> lime -> amber -> coral as it drains, the bar deepens toward its base, and
-// a soft sheen runs base-to-tip every few seconds so it reads as live. Used up: the whole strip
-// glows coral, slowly.
+// LIVE, idle: shelf life LEFT as a bar, sub-pixel so 72 % really looks like 72 %. The colour
+// slides mint -> lime -> amber -> coral as it drains, the bar deepens toward its base, and a soft
+// sheen runs base-to-tip every few seconds so it reads as live. Used up: the whole strip glows
+// coral, slowly.
 void sceneShelfBar(int pctLeft, unsigned long now) {
   if (pctLeft <= 0) {
     sceneFill(scaleCol(hexCol(PAL_CORAL), 0.3f + 0.25f * wave01(now, 2600)));
@@ -789,15 +849,14 @@ void sceneShelfBar(int pctLeft, unsigned long now) {
   }
 }
 
-// Connected, no shipment data yet: a slowly drifting two-tone aura whose colour temperature is
-// the temperature error -- mint/ice on target, warming to amber as it drifts past
-// TEMP_DRIFT_WARN_C, coral beyond the 3 C alarm threshold.
+// LIVE, but no shelf-life number synced yet: a slowly drifting two-tone aura whose colour
+// temperature is the temperature error -- mint/ice on target, warming to amber as it drifts past
+// TEMP_DRIFT_WARN_C.
 void sceneThermalAura(float devC, unsigned long now) {
   float d = fabsf(devC);
   float warm = smooth01((d - TEMP_DRIFT_WARN_C * 0.6f) / TEMP_DRIFT_WARN_C);
-  float hot = smooth01(d - SETPOINT_DEVIATION_ALERT_THRESH_C);
-  Col a = mixCol(mixCol(hexCol(PAL_MINT), hexCol(PAL_AMBER), warm), hexCol(PAL_CORAL), hot);
-  Col b = mixCol(mixCol(hexCol(PAL_ICE), hexCol(PAL_WARM), warm), hexCol(PAL_AMBER), hot);
+  Col a = mixCol(hexCol(PAL_MINT), hexCol(PAL_AMBER), warm);
+  Col b = mixCol(hexCol(PAL_ICE), hexCol(PAL_WARM), warm);
   float breath = 0.35f + 0.3f * wave01(now, 5200);
   float drift = (float)(now % 9000) / 9000.0f;
   for (int p = 0; p < STATUS_LED_COUNT; p++) {
@@ -806,13 +865,11 @@ void sceneThermalAura(float devC, unsigned long now) {
   }
 }
 
-// No sensor reading yet: a small warm glow, breathing slowly.
+// LIVE, no sensor reading yet: a small warm glow, breathing slowly.
 void sceneNoSensor(unsigned long now) {
   float b = wave01(now, 4000);
   for (int p = 0; p < STATUS_LED_COUNT; p++) ledScene[p] = scaleCol(hexCol(PAL_WARM), (0.2f + 0.25f * b) * glowAt(p, LED_MID, 2.5f));
 }
-
-// --- Alerts, blended over the scene -----------------------------------------
 
 static inline float beatPulse(float t) { // fast attack, soft decay
   if (t < 0.0f) return 0.0f;
@@ -820,50 +877,48 @@ static inline float beatPulse(float t) { // fast attack, soft decay
   return expf(-(t - 0.05f) / 0.13f);
 }
 
-// Device alarm: the whole strip turns coral and stays coral -- it never drops back to the scene
-// underneath, so it can't read as flickering between two things. For the first ALARM_URGENT_MS
-// it beats like a heart (lub-dub) to get attention, then settles into a slow, steady breath:
-// still unmistakably an alarm, but it doesn't strobe for hours on a box that's been warm all day.
-void sceneAlarm(unsigned long sinceMs, unsigned long now) {
+// LIVE, a device alarm has just started: the whole strip beats coral like a heart (lub-dub) for
+// ALARM_URGENT_MS. It never drops to black between beats, so it can't read as flickering.
+void sceneHeartbeat(unsigned long now) {
   float t = (float)(now % 1100) / 1000.0f;
-  float heart = 0.35f + 0.65f * clamp01(beatPulse(t) + 0.75f * beatPulse(t - 0.24f));
-  float breath = 0.35f + 0.35f * wave01(now, 3200);
-  float level = heart + (breath - heart) * smooth01(((float)sinceMs - ALARM_URGENT_MS) / 1500.0f);
+  float level = 0.35f + 0.65f * clamp01(beatPulse(t) + 0.75f * beatPulse(t - 0.24f));
   for (int p = 0; p < STATUS_LED_COUNT; p++) {
     float centre = glowAt(p, LED_MID, STATUS_LED_COUNT * 0.4f);
-    Col c = mixCol(hexCol(PAL_AMBER), hexCol(PAL_CORAL), 0.8f + 0.2f * centre); // a touch warmer at the ends
-    ledScene[p] = scaleCol(c, level * (0.8f + 0.2f * centre));
+    ledScene[p] = scaleCol(mixCol(hexCol(PAL_AMBER), hexCol(PAL_CORAL), 0.8f + 0.2f * centre), level * (0.8f + 0.2f * centre));
   }
 }
 
-// The backend's AI raised an alert: every few seconds a blue -> violet -> pink -> orange wave
-// flows along the strip and dissolves -- "the AI has something to say, look at the phone".
-void overlayIntelligence(bool critical, unsigned long now) {
-  const unsigned long period = critical ? 2600 : 4200, len = 2000;
-  unsigned long t = now % period;
-  if (t >= len) return;
-  float env = sinf(PI * (float)t / len);
-  env *= env;
-  float flow = (float)(now % 15000) / 1500.0f; // whole turns of the gradient, so the wrap is seamless
-  float ripple = (float)(now % 1100) / 1100.0f;
+// LIVE, the alarm is still on after the heartbeat: the shelf-life bar stays (so shelf life is
+// still readable) but turns coral and breathes slowly, and the empty part of the strip glows dim
+// coral too -- unlike a merely low bar, which is short, steady and has a blue track.
+void sceneAlarmBar(int pctLeft, unsigned long now) {
+  float b = 0.55f + 0.45f * wave01(now, 3200);
+  float level = pctLeft < 0 ? (float)STATUS_LED_COUNT : pctLeft / 100.0f * STATUS_LED_COUNT;
   for (int p = 0; p < STATUS_LED_COUNT; p++) {
-    Col c = gradientAt(kAiStops, 4, (float)p / STATUS_LED_COUNT * 0.9f - flow, true);
-    float shimmer = 0.8f + 0.2f * sinf(2.0f * PI * ((float)p / STATUS_LED_COUNT * 1.3f + ripple));
-    ledScene[p] = mixCol(ledScene[p], scaleCol(c, shimmer), env * 0.92f);
+    float along = level > 1.0f ? clamp01(p / (level - 1.0f)) : 1.0f;
+    Col bar = scaleCol(hexCol(PAL_CORAL), (0.55f + 0.45f * along) * b);
+    ledScene[p] = mixCol(scaleCol(hexCol(PAL_CORAL), 0.22f * b), bar, clamp01(level - p));
   }
 }
 
-// Door open: warm amber light spilling in from both ends, like light through an open door.
-void overlayDoorSpill(unsigned long now) {
+// LIVE, door open (not yet long enough to be an alarm): warm amber light spilling in from both
+// ends, like light through an open door. Replaces the bar until the door closes.
+void sceneDoorOpen(unsigned long now) {
   float b = wave01(now, 1800);
-  float reach = 1.2f + 1.4f * b;
+  float reach = 1.4f + 1.6f * b;
   for (int p = 0; p < STATUS_LED_COUNT; p++) {
-    float a = clamp01(glowAt(p, 0, reach) + glowAt(p, STATUS_LED_COUNT - 1, reach)) * (0.5f + 0.4f * b);
-    ledScene[p] = mixCol(ledScene[p], hexCol(PAL_AMBER), a);
+    float a = clamp01(glowAt(p, 0, reach) + glowAt(p, STATUS_LED_COUNT - 1, reach));
+    ledScene[p] = scaleCol(mixCol(hexCol(PAL_WARM), hexCol(PAL_AMBER), 0.4f + 0.6f * a), (0.22f + 0.7f * a) * (0.75f + 0.25f * b));
   }
 }
 
-// --- Moments: short animations that take over the strip, then dissolve back --
+// --- Moments: short, queued, each plays to its end -------------------------
+
+// One ring of light running out from the centre over 0.5 s (the "command received" ripple).
+float rippleLevel(int p, unsigned long t) {
+  float u = clamp01(t / 500.0f);
+  return clamp01(glowAt(fabsf(p - LED_MID), u * (STATUS_LED_COUNT / 2.0f + 1.0f), 0.9f) * (1.0f - u) * (1.0f - u) * 1.2f);
+}
 
 void renderMoment(LedEvent e, unsigned long t) { // t = ms since the moment started
   const int N = STATUS_LED_COUNT;
@@ -898,11 +953,24 @@ void renderMoment(LedEvent e, unsigned long t) { // t = ms since the moment star
       }
       break;
     }
-    case LE_COMMAND_OK: { // ripple: one ring of light running out from the centre
-      float u = clamp01(s / 0.5f);
+    case LE_COMMAND_OK: // ripple: one ring of light running out from the centre
+      for (int p = 0; p < N; p++) ledScene[p] = scaleCol(hexCol(PAL_FROST), rippleLevel(p, t));
+      break;
+    case LE_GO_LIVE: { // the shipment goes live: a frost light runs the strip, leaving mint behind
+      float head = easeOut3(s / 0.8f) * (N + 2.0f) - 1.0f;
       for (int p = 0; p < N; p++) {
-        float g = glowAt(fabsf(p - LED_MID), u * (N / 2.0f + 1.0f), 0.9f) * (1.0f - u) * (1.0f - u) * 1.2f;
-        ledScene[p] = scaleCol(hexCol(PAL_FROST), clamp01(g));
+        Col c = scaleCol(hexCol(PAL_MINT), clamp01(head - p + 0.5f) * 0.7f);
+        ledScene[p] = addCol(c, scaleCol(hexCol(PAL_FROST), glowAt(p, head, 0.9f) * (1.0f - smooth01(s - 0.6f))));
+      }
+      break;
+    }
+    case LE_AI_ALERT: { // the backend's AI raised an alert: a blue-violet-pink-orange wave flows along the strip, swelling three times
+      float swell = sinf(PI * (float)(t % 1500) / 1500.0f);
+      swell *= swell;
+      float flow = s / 1.5f;
+      for (int p = 0; p < N; p++) {
+        Col c = gradientAt(kAiStops, 4, (float)p / N * 0.9f - flow, true);
+        ledScene[p] = scaleCol(c, 0.3f + 0.7f * swell);
       }
       break;
     }
@@ -943,21 +1011,52 @@ void renderMoment(LedEvent e, unsigned long t) { // t = ms since the moment star
   }
 }
 
-void startLedEvent(LedEvent e, unsigned long durationMs) {
+void beginLedEvent(LedEvent e, unsigned long durationMs) {
   ledEvent = e;
   ledEventStartMs = millis();
   ledEventDurationMs = durationMs;
 }
 
-// Draws the running moment and returns its scene key, or -1 once none is running.
-int drawLedEvent(unsigned long nowMs) {
-  if (ledEvent == LE_NONE) return -1;
-  unsigned long t = nowMs - ledEventStartMs;
-  if (t >= ledEventDurationMs) {
-    ledEvent = LE_NONE;
-    return -1;
+// Queues a moment. Moments never cut each other off: if one is playing, this one waits its turn
+// (and isn't queued twice).
+void startLedEvent(LedEvent e, unsigned long durationMs) {
+  if (ledEvent == LE_NONE) {
+    beginLedEvent(e, durationMs);
+    return;
   }
-  renderMoment(ledEvent, t);
+  if (ledEvent == e) return;
+  for (int i = 0; i < ledQueueCount; i++) {
+    if (ledQueue[i] == e) return;
+  }
+  if (ledQueueCount < LED_QUEUE_LEN) {
+    ledQueue[ledQueueCount] = e;
+    ledQueueDurationMs[ledQueueCount] = durationMs;
+    ledQueueCount++;
+  }
+}
+
+// For bench diagnostics only ('g'): drop whatever is queued and play this right now.
+void playLedEventNow(LedEvent e, unsigned long durationMs) {
+  ledQueueCount = 0;
+  beginLedEvent(e, durationMs);
+}
+
+// Draws the running moment (starting the next queued one when it ends) and returns its look key,
+// or -1 once none is running.
+int drawLedEvent(unsigned long nowMs) {
+  if (ledEvent != LE_NONE && nowMs - ledEventStartMs >= ledEventDurationMs) {
+    ledEvent = LE_NONE;
+    if (ledQueueCount > 0) {
+      beginLedEvent(ledQueue[0], ledQueueDurationMs[0]);
+      for (int i = 1; i < ledQueueCount; i++) {
+        ledQueue[i - 1] = ledQueue[i];
+        ledQueueDurationMs[i - 1] = ledQueueDurationMs[i];
+      }
+      ledQueueCount--;
+    }
+  }
+  if (ledEvent == LE_NONE) return -1;
+  renderMoment(ledEvent, nowMs - ledEventStartMs);
   return 100 + (int)ledEvent;
 }
 
@@ -965,62 +1064,103 @@ bool phoneStatusFresh(unsigned long nowMs) {
   return phoneStatusSeen && (nowMs - phoneStatusMs < PHONE_STATUS_STALE_MS);
 }
 
-// Draws the live scene plus at most one alert, and returns the scene key.
-int drawLiveStatus(unsigned long nowMs) {
-  int key;
-  if (pairingActive) {
-    float progress = (numCandidates > 0 && pairingCandidateIdx >= 0) ? (float)(pairingCandidateIdx + 1) / numCandidates : 0.0f;
-    scenePairingComet(progress, nowMs);
-    key = 1;
-  } else if (ledLocalAlert) {
-    sceneAlarm(nowMs - ledAlarmSinceMs, nowMs);
-    return 6; // the alarm owns the whole strip: no other alert on top
-  } else if (!bleDeviceConnected) {
-    sceneBeacon(nowMs);
-    key = 2;
-  } else if (phoneStatusFresh(nowMs) && phoneShelfPct >= 0) {
-    sceneShelfBar(phoneShelfPct, nowMs);
-    key = 3;
-  } else if (ledTempValid) {
-    sceneThermalAura(ledTempDeviationC, nowMs);
-    key = 4;
-  } else {
-    sceneNoSensor(nowMs);
-    key = 5;
-  }
-
-  // Alerts blended over the scene: the backend's AI first, then a door that's open but not yet
-  // open long enough to be an alarm. (A device alarm already took the whole strip above.)
-  if (phoneStatusFresh(nowMs) && phoneAlertLevel > 0) {
-    overlayIntelligence(phoneAlertLevel >= 2, nowMs);
-  } else if (doorOpen) {
-    overlayDoorSpill(nowMs);
-  }
-  return key;
+LedStage currentLedStage(unsigned long nowMs) {
+  if (pairingActive) return STAGE_PAIRING;
+  if (!bleDeviceConnected) return STAGE_WAITING;
+  if (phoneStatusFresh(nowMs)) return STAGE_LIVE;
+  return STAGE_SETUP;
 }
 
-// Serial 'd': every look, LED_DEMO_STEP_MS each, its meaning printed to Serial as it starts.
+// Draws the look for the current stage and returns its key (a new key = a crossfade).
+int drawLiveStatus(unsigned long nowMs) {
+  if (ledStage != STAGE_LIVE) ledAlarmVisible = false;
+  switch (ledStage) {
+    case STAGE_PAIRING: {
+      float progress = (numCandidates > 0 && pairingCandidateIdx >= 0) ? (float)(pairingCandidateIdx + 1) / numCandidates : 0.0f;
+      scenePairingComet(progress, nowMs);
+      return 1;
+    }
+    case STAGE_WAITING:
+      sceneBeacon(nowMs);
+      return 2;
+    case STAGE_SETUP:
+      sceneSetup(setupProductDone, acPaired, nowMs);
+      return 3;
+    case STAGE_LIVE:
+      break;
+  }
+
+  // LIVE: the one stage that shows problems -- someone is watching, and the product and setpoint
+  // are known. One look at a time, most important first.
+  if (ledLocalAlert) {
+    if (!ledAlarmVisible) {
+      ledAlarmVisible = true;
+      ledAlarmShownMs = nowMs;
+    }
+    if (nowMs - ledAlarmShownMs < ALARM_URGENT_MS) {
+      sceneHeartbeat(nowMs);
+      return 10;
+    }
+    sceneAlarmBar(phoneShelfPct, nowMs);
+    return 11;
+  }
+  ledAlarmVisible = false;
+  if (doorOpen) {
+    sceneDoorOpen(nowMs);
+    return 12;
+  }
+  if (phoneShelfPct >= 0) {
+    sceneShelfBar(phoneShelfPct, nowMs); // idle: just the shelf life
+    return 13;
+  }
+  if (ledTempValid) {
+    sceneThermalAura(ledTempDeviationC, nowMs);
+    return 14;
+  }
+  sceneNoSensor(nowMs);
+  return 15;
+}
+
+// Moves the workflow on. Going live plays the "go live" sweep; when a live trip ends (or the phone
+// drops) the checklist resets, so the next setup starts from "product" again. While an AI alert
+// stays active, its wave plays again every AI_REMINDER_MS.
+void updateLedStage(unsigned long nowMs) {
+  LedStage stage = currentLedStage(nowMs);
+  if (stage != ledStage) {
+    if (stage == STAGE_LIVE) startLedEvent(LE_GO_LIVE, 1300);
+    if (ledStage == STAGE_LIVE && stage == STAGE_WAITING) setupProductDone = false;
+    ledStage = stage;
+  }
+  if (ledStage == STAGE_LIVE && phoneAlertLevel > 0 && nowMs - lastAiMomentMs >= AI_REMINDER_MS) {
+    startLedEvent(LE_AI_ALERT, 4500);
+    lastAiMomentMs = nowMs;
+  }
+}
+
+// Serial 'd': the whole workflow in order, LED_DEMO_STEP_MS per look, its meaning printed to
+// Serial as it starts.
 static const char *const kLedDemoSteps[] = {
-  "Frost bloom -- booted and ready",
-  "Beacon (blue light breathing at the centre) -- waiting for the phone app",
-  "Handshake (two lights meet in the middle) -- phone connected",
-  "Ripple (a ring running outward) -- a command from the phone arrived",
-  "Mint aura -- connected, temperature on target (no shipment data yet)",
-  "Amber aura -- temperature drifting away from the setpoint",
-  "Shelf-life bar, 85% left -- mint, a sheen running along it",
-  "Shelf-life bar, 45% left -- the colour slides toward amber as it drains",
-  "Shelf-life bar, 12% left -- coral: nearly used up",
-  "Amber light spilling in from both ends -- door open",
-  "Blue-violet-pink wave -- the server's AI raised an alert: read it on the phone",
-  "Coral alarm -- whole strip, heartbeat for 8 s then a slow breath (temperature >3 C off, changing fast, or door open >60 s)",
-  "Ice comet -- AC auto-pairing running (the faint fill is progress)",
-  "Mint sweep -- AC paired",
-  "Shake -- AC pairing found no match",
+  "Frost bloom -- booted",
+  "Blue beacon -- waiting for the phone. Nothing else shows until a phone connects: nobody would see an alarm",
+  "Handshake -- phone connected, setup starts",
+  "Setup checklist (phone | product | AC) -- phone done (mint), product next (breathing)",
+  "Ripple -- product received from the phone; the AC step is next",
+  "Ice comet -- AC auto-pairing (the faint fill is progress)",
+  "Mint sweep -- AC paired (a coral shake would mean no match)",
+  "Setup complete -- all three steps mint, ready to go live",
+  "Go live -- a light runs the strip and leaves the shelf-life bar behind",
+  "Idle while live: just the shelf-life bar, 85% left -- mint, a sheen running along it",
+  "Shelf-life bar, 40% left -- the colour slides toward amber as it drains",
+  "Shelf-life bar, 12% left -- coral, short and steady: nearly used up",
+  "Door open -- amber light spilling in from both ends, until it closes",
+  "AI alert -- a blue-violet-pink wave swells when the server's AI flags something (again every 2 min while it's active)",
+  "Device alarm -- the whole strip beats coral like a heart for 8 s",
+  "Alarm still on -- the bar turns coral and breathes, the empty part glowing coral too",
   "Spectrum -- 'identify' from the phone: this is the box you're connected to",
 };
 static const int kNumLedDemoSteps = sizeof(kLedDemoSteps) / sizeof(kLedDemoSteps[0]);
 
-// Returns the step's scene key, or -1 once the demo is over.
+// Returns the step's look key, or -1 once the demo is over.
 int drawLedDemo(unsigned long nowMs) {
   unsigned long t = nowMs - ledDemoStartMs;
   int step = t / LED_DEMO_STEP_MS;
@@ -1038,18 +1178,25 @@ int drawLedDemo(unsigned long nowMs) {
     case 0: renderMoment(LE_BOOT, st % 2200); break;
     case 1: sceneBeacon(nowMs); break;
     case 2: renderMoment(LE_CONNECTED, st % 1500); break;
-    case 3: renderMoment(LE_COMMAND_OK, st % 900); break;
-    case 4: sceneThermalAura(0.0f, nowMs); break;
-    case 5: sceneThermalAura(2.3f, nowMs); break;
-    case 6: sceneShelfBar(85, nowMs); break;
-    case 7: sceneShelfBar(45, nowMs); break;
-    case 8: sceneShelfBar(12, nowMs); break;
-    case 9: sceneShelfBar(85, nowMs); overlayDoorSpill(nowMs); break;
-    case 10: sceneShelfBar(85, nowMs); overlayIntelligence(true, nowMs); break;
-    case 11: sceneAlarm(st, nowMs); break;
-    case 12: scenePairingComet((float)st / LED_DEMO_STEP_MS, nowMs); break;
-    case 13: renderMoment(LE_PAIR_MATCHED, st % 2200); break;
-    case 14: renderMoment(LE_PAIR_NO_MATCH, st % 1600); break;
+    case 3: sceneSetup(false, false, nowMs); break;
+    case 4:
+      if (st < 500) renderMoment(LE_COMMAND_OK, st);
+      else sceneSetup(true, false, nowMs);
+      break;
+    case 5: scenePairingComet((float)st / LED_DEMO_STEP_MS, nowMs); break;
+    case 6: renderMoment(LE_PAIR_MATCHED, st % 2200); break;
+    case 7: sceneSetup(true, true, nowMs); break;
+    case 8:
+      if (st < 1300) renderMoment(LE_GO_LIVE, st);
+      else sceneShelfBar(85, nowMs);
+      break;
+    case 9: sceneShelfBar(85, nowMs); break;
+    case 10: sceneShelfBar(40, nowMs); break;
+    case 11: sceneShelfBar(12, nowMs); break;
+    case 12: sceneDoorOpen(nowMs); break;
+    case 13: renderMoment(LE_AI_ALERT, st); break;
+    case 14: sceneHeartbeat(nowMs); break;
+    case 15: sceneAlarmBar(85, nowMs); break;
     default: renderMoment(LE_IDENTIFY, st % 4500); break;
   }
   return 200 + step;
@@ -1061,10 +1208,11 @@ void startLedDemo() {
   ledDemoLastStep = -1;
 }
 
-// Called every loop() pass; draws at most every STATUS_LED_FRAME_MS and dissolves between scenes.
+// Called every loop() pass; draws at most every STATUS_LED_FRAME_MS and dissolves between looks.
 void updateStatusLeds(unsigned long nowMs) {
   if (!statusLedsReady || nowMs - lastLedFrameMs < STATUS_LED_FRAME_MS) return;
   lastLedFrameMs = nowMs;
+  updateLedStage(nowMs);
   int key = ledDemoActive ? drawLedDemo(nowMs) : -1;
   if (key < 0) key = drawLedEvent(nowMs);
   if (key < 0) key = drawLiveStatus(nowMs);
@@ -1159,6 +1307,7 @@ void processBleCommand(const String &jsonIn) {
       saveCategory(currentCategory);
       Serial.print("BLE: category set to ");
       Serial.println(currentCategory);
+      setupProductDone = true;
       startLedEvent(LE_COMMAND_OK, 500);
     } else {
       Serial.print("BLE: rejected unknown category: ");
@@ -1183,7 +1332,12 @@ void processBleCommand(const String &jsonIn) {
     float shelf = doc["shelf"] | -1.0f;
     phoneShelfPct = shelf < 0 ? -1 : (int)lroundf(fminf(shelf, 100.0f));
     const char *alert = doc["alert"] | "none";
-    phoneAlertLevel = strcmp(alert, "critical") == 0 ? 2 : (strcmp(alert, "warning") == 0 ? 1 : 0);
+    int level = strcmp(alert, "critical") == 0 ? 2 : (strcmp(alert, "warning") == 0 ? 1 : 0);
+    if (level > phoneAlertLevel) {
+      startLedEvent(LE_AI_ALERT, 4500);
+      lastAiMomentMs = millis();
+    }
+    phoneAlertLevel = level;
     phoneStatusMs = millis();
     phoneStatusSeen = true;
   } else if (strcmp(cmd, "identify") == 0) {
@@ -1449,7 +1603,7 @@ void printMenu() {
   Serial.println("(+, -, f, p all resend using the currently selected/paired protocol)");
   Serial.println("x = IR LED test (3 s flashing, view through a phone camera)");
   Serial.println("g = light strip colour test (red, green, blue, white -- 1 s each)");
-  Serial.println("d = light strip demo (every look, 4.5 s each, meaning printed here)");
+  Serial.println("d = light strip demo (the whole workflow, 4.5 s per look, meaning printed here)");
 }
 
 // Wiring check for the IR LED: 38 kHz carrier switched on/off at 2 Hz, so it shows as a clear
@@ -1536,7 +1690,7 @@ void handleSerialInput() {
       case 'g':
         ledDemoActive = false;
         Serial.printf(">>> LIGHT STRIP TEST (GPIO%u): RED, GREEN, BLUE, WHITE, 1 s each -- if the first colour isn't red, the colour order isn't GRB <<<\n", PIN_STATUS_LEDS);
-        startLedEvent(LE_COLOUR_TEST, 4000);
+        playLedEventNow(LE_COLOUR_TEST, 4000);
         break;
       case 'd':
         startLedDemo();
@@ -1625,7 +1779,6 @@ void loop() {
   unsigned long doorOpenDurationMs = doorOpen ? (now - doorOpenSinceMs) : 0;
   bool doorAlert = doorOpen && (doorOpenDurationMs > DOOR_OPEN_ALERT_THRESH_MS);
   bool alertNow = tempAlert || doorAlert;
-  if (alertNow && !ledLocalAlert) ledAlarmSinceMs = now;
   ledLocalAlert = alertNow;
   ledTempValid = tempValid;
   ledTempDeviationC = tempValid ? (tempC - setpoint) : 0.0f;

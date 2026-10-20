@@ -9,7 +9,7 @@ every firmware message as it happens. Keys are sent straight to the firmware:
 
     x  IR LED test (3 s flashing -- watch the LED through a phone camera)
     g  light strip colour test (red, green, blue, white -- 1 s each; first must be red for GRB)
-    d  light strip demo (every look, 4.5 s each, its meaning printed here)
+    d  light strip demo (the whole workflow, 4.5 s per look, meaning printed here)
     p  power toggle   +/-  AC temp up/down   f  fan   a  auto-pair   l  list protocols
     q  quit the console (the ESP keeps running)
 
