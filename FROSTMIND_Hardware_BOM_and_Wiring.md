@@ -83,7 +83,7 @@ Work through these before touching the AC — they isolate wiring problems from 
 4. Open/close the reed switch by hand — the `door` column flips 0/1.
 5. Scan for BLE device `FROSTMIND` with any generic scanner app (e.g. nRF Connect) — confirms the radio side works even before the phone app is tested against real hardware.
 6. Send a test IR command (serial key `n`, or `x` for a 3 s test flash) and view the LED through a phone camera — IR is invisible to the eye but shows as a flicker on camera.
-7. The LED strip plays a cyan sweep at boot. Serial key `g` shows red, green, blue, white for 1 s each (if the first isn't red, the colour order isn't GRB); `d` runs through the whole light workflow with each meaning printed.
+7. The LED strip plays a "frost bloom" at boot, then a blue beacon until a phone connects. Serial key `g` shows red, green, blue, white for 1 s each (if the first isn't red, the colour order isn't GRB); `d` runs through the whole light workflow with each meaning printed.
 
 ## 6. What's next
 

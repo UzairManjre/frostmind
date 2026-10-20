@@ -242,7 +242,7 @@ If no category has been set, `DEFAULT_SETPOINT_C` (4.0°C) is used.
 
 ## Serial command set (manual-fallback pairing flow)
 
-Bench-test keys: `x` = IR LED test (3 s flashing, view through a phone's front camera), `g` = light strip colour test (red, green, blue, white, 1 s each), `d` = light strip demo (every look, 4.5 s each, its meaning printed). Live console with these keys: `.venv\Scripts\python.exe scripts\esp_console.py`.
+Bench-test keys: `x` = IR LED test (3 s flashing, view through a phone's front camera), `g` = light strip colour test (red, green, blue, white, 1 s each), `d` = light strip demo (the whole workflow, 4.5 s per look, its meaning printed). Live console with these keys: `.venv\Scripts\python.exe scripts\esp_console.py`.
 
 
 Same key bindings as `frostmind_brand_select_ir.ino`, adapted into this
