@@ -1,0 +1,18 @@
+{
+  "name": "frostmind-phase7-docs",
+  "private": true,
+  "description": "Generates the Phase 7 documentation (.docx), presentation (.pptx) and figures",
+  "scripts": {
+    "figures": "node make_figures.js",
+    "docx": "node build_docx.js",
+    "pptx": "node build_pptx.js"
+  },
+  "dependencies": {
+    "docx": "^9.15.0",
+    "pptxgenjs": "^3.12.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-icons": "^5.7.0",
+    "sharp": "^0.35.5"
+  }
+}
